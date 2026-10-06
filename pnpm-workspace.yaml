@@ -1,0 +1,12 @@
+packages:
+  - "packages/*"
+  - "apps/*"
+
+catalog:
+  zod: "4.6.5"
+
+overrides:
+  zod: "catalog:"
+
+allowBuilds:
+  esbuild: true
