@@ -5,6 +5,13 @@ export {
 } from "./fakes.js";
 export type { Embedder, NoteStore, SearchIndex } from "./ports.js";
 export {
+  parseNote,
+  ParsedBlockSchema,
+  ParsedNoteSchema,
+  type ParsedBlock,
+  type ParsedNote,
+} from "./ingestion/parse.js";
+export {
   ChunkSchema,
   SearchHitSchema,
   SearchQuerySchema,

@@ -3,3 +3,5 @@ node_modules
 coverage
 pnpm-lock.yaml
 docs
+packages/core/src/ingestion/fixtures
+*.snap

@@ -1,0 +1,105 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`parses a note without frontmatter 1`] = `
+{
+  "blocks": [
+    {
+      "text": "A heading link retries and a bare Indexer.",
+      "type": "paragraph",
+    },
+    {
+      "lang": "js",
+      "text": "const label = "#hidden";",
+      "type": "code",
+    },
+    {
+      "text": "Watch the clock.",
+      "type": "paragraph",
+    },
+  ],
+  "links": [
+    "Queue Worker",
+    "Indexer",
+    "diagram.png",
+  ],
+  "notePath": "devlog-agent/plain.md",
+  "noteTitle": "plain",
+  "tags": [],
+}
+`;
+
+exports[`parses frontmatter, links, callouts, and mermaid 1`] = `
+{
+  "blocks": [
+    {
+      "depth": 1,
+      "text": "Architecture",
+      "type": "heading",
+    },
+    {
+      "text": "The #retry service calls the procedure and Indexer.",
+      "type": "paragraph",
+    },
+    {
+      "text": "Also the queue.",
+      "type": "paragraph",
+    },
+    {
+      "text": "Retry policy
+Failed batches wait and then retry.
+The limit is three attempts.",
+      "type": "paragraph",
+    },
+    {
+      "depth": 2,
+      "text": "Background Processing",
+      "type": "heading",
+    },
+    {
+      "lang": "mermaid",
+      "text": "flowchart LR
+  A --> B",
+      "type": "code",
+    },
+    {
+      "lang": "ts",
+      "text": "const label = "worker";",
+      "type": "code",
+    },
+    {
+      "text": "| Procedure | Caller |
+| --- | --- |
+| sp_ProcessBatch | Worker Service |",
+      "type": "table",
+    },
+    {
+      "text": "- first step
+- See the vault",
+      "type": "list",
+    },
+    {
+      "depth": 4,
+      "text": "Detail",
+      "type": "heading",
+    },
+    {
+      "text": "H4 stays with its parent.",
+      "type": "paragraph",
+    },
+  ],
+  "links": [
+    "sp_ProcessBatch",
+    "Indexer",
+    "Runbook",
+    "Queue Worker",
+    "Vault",
+  ],
+  "notePath": "devlog-agent/Architecture.md",
+  "noteTitle": "Architecture",
+  "tags": [
+    "worker",
+    "queue",
+    "retry",
+  ],
+}
+`;
