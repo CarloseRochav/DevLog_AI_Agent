@@ -2,6 +2,7 @@ import {
   SearchHitSchema,
   SearchQuerySchema,
   type Embedder,
+  type EmbeddingStamp,
   type IndexedChunk,
   type SearchHit,
   type SearchIndex as SearchIndexPort,
@@ -366,6 +367,29 @@ export class AzureSearchIndex implements SearchIndexPort {
       },
     });
     return hits.map((hit) => SearchHitSchema.parse(toSearchHit(hit)));
+  }
+
+  async readEmbeddingStamp(): Promise<EmbeddingStamp | null> {
+    const hits = await this.documents.search({
+      searchText: "*",
+      top: 1,
+      select: ["embeddingModel", "embeddingDimensions"],
+    });
+    const document = hits[0]?.document;
+    if (document === undefined) {
+      return null;
+    }
+    const embeddingModel = document.embeddingModel;
+    const embeddingDimensions = document.embeddingDimensions;
+    if (
+      typeof embeddingModel !== "string" ||
+      typeof embeddingDimensions !== "number"
+    ) {
+      throw new Error(
+        "Index document is missing embeddingModel or embeddingDimensions",
+      );
+    }
+    return { embeddingModel, embeddingDimensions };
   }
 
   async listNoteHashes(): Promise<Map<string, string>> {

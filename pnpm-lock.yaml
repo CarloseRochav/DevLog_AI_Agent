@@ -215,6 +215,9 @@ importers:
       '@devlog/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@devlog/core':
+        specifier: workspace:*
+        version: link:../../packages/core
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

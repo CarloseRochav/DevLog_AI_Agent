@@ -1,4 +1,9 @@
-import type { Embedder, NoteStore, SearchIndex } from "./ports.js";
+import type {
+  Embedder,
+  EmbeddingStamp,
+  NoteStore,
+  SearchIndex,
+} from "./ports.js";
 import type { IndexedChunk, SearchHit, SearchQuery } from "./schemas.js";
 
 function vectorFor(text: string, dimensions: number): number[] {
@@ -78,6 +83,17 @@ export class InMemorySearchIndex implements SearchIndex {
       hashes.set(chunk.notePath, chunk.contentHash);
     }
     return hashes;
+  }
+
+  async readEmbeddingStamp(): Promise<EmbeddingStamp | null> {
+    const first = this.chunks.values().next().value;
+    if (first === undefined) {
+      return null;
+    }
+    return {
+      embeddingModel: first.embeddingModel,
+      embeddingDimensions: first.embeddingDimensions,
+    };
   }
 }
 

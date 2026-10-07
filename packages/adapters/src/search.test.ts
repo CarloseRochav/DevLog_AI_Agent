@@ -461,3 +461,53 @@ test("listNoteHashes keeps the first hash for each note", async () => {
   expect(hashes.get("ProjectX/Decisions.md")).toBe("other");
   expect(hashes.has("ProjectX/Missing.md")).toBe(false);
 });
+
+test("readEmbeddingStamp reads the model and dimensions from one document", async () => {
+  const { index, documents } = indexWith();
+  documents.searchHandler = () => [
+    {
+      document: {
+        embeddingModel: "text-embedding-3-small",
+        embeddingDimensions: 1536,
+      },
+    },
+  ];
+
+  const stamp = await index.readEmbeddingStamp();
+
+  expect(documents.searches).toEqual([
+    {
+      searchText: "*",
+      top: 1,
+      select: ["embeddingModel", "embeddingDimensions"],
+    },
+  ]);
+  expect(stamp).toEqual({
+    embeddingModel: "text-embedding-3-small",
+    embeddingDimensions: 1536,
+  });
+});
+
+test("readEmbeddingStamp is null when the index has no documents", async () => {
+  const { index, documents } = indexWith();
+
+  await expect(index.readEmbeddingStamp()).resolves.toBeNull();
+  expect(documents.searches).toEqual([
+    {
+      searchText: "*",
+      top: 1,
+      select: ["embeddingModel", "embeddingDimensions"],
+    },
+  ]);
+});
+
+test("readEmbeddingStamp rejects a document missing the stamp fields", async () => {
+  const { index, documents } = indexWith();
+  documents.searchHandler = () => [
+    { document: { embeddingModel: "text-embedding-3-small" } },
+  ];
+
+  await expect(index.readEmbeddingStamp()).rejects.toThrow(
+    "Index document is missing embeddingModel or embeddingDimensions",
+  );
+});

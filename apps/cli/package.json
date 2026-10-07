@@ -14,7 +14,8 @@
   },
   "dependencies": {
     "@devlog/adapters": "workspace:*",
-    "@devlog/config": "workspace:*"
+    "@devlog/config": "workspace:*",
+    "@devlog/core": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:"

@@ -3,8 +3,20 @@ export {
   InMemoryNoteStore,
   InMemorySearchIndex,
 } from "./fakes.js";
-export type { Embedder, NoteStore, SearchIndex } from "./ports.js";
+export type {
+  Embedder,
+  EmbeddingStamp,
+  NoteStore,
+  SearchIndex,
+} from "./ports.js";
 export { chunkNote, type ChunkOptions } from "./ingestion/chunk.js";
+export {
+  IndexError,
+  indexVault,
+  type IndexOptions,
+  type IndexReport,
+} from "./ingestion/index-vault.js";
+export { walkVault, type VaultNote } from "./ingestion/walk.js";
 export {
   parseNote,
   ParsedBlockSchema,

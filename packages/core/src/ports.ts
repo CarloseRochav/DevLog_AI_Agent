@@ -6,11 +6,17 @@ export interface Embedder {
   embed(texts: string[]): Promise<number[][]>;
 }
 
+export interface EmbeddingStamp {
+  embeddingModel: string;
+  embeddingDimensions: number;
+}
+
 export interface SearchIndex {
   upsert(chunks: IndexedChunk[]): Promise<void>;
   deleteByNotePath(notePath: string): Promise<void>;
   hybridSearch(q: SearchQuery): Promise<SearchHit[]>;
   listNoteHashes(): Promise<Map<string, string>>;
+  readEmbeddingStamp(): Promise<EmbeddingStamp | null>;
 }
 
 export interface NoteStore {

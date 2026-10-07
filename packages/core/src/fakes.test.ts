@@ -65,6 +65,23 @@ test("upsert lists one hash per note and delete removes it", async () => {
   expect((await index.listNoteHashes()).size).toBe(0);
 });
 
+test("readEmbeddingStamp is empty until a chunk is stored", async () => {
+  const index = new InMemorySearchIndex();
+
+  expect(await index.readEmbeddingStamp()).toBeNull();
+  await index.upsert([
+    chunk({
+      embeddingModel: "text-embedding-3-small",
+      embeddingDimensions: 1536,
+    }),
+  ]);
+
+  expect(await index.readEmbeddingStamp()).toEqual({
+    embeddingModel: "text-embedding-3-small",
+    embeddingDimensions: 1536,
+  });
+});
+
 test("hybridSearch matches content and honors topK, notePath, and tags", async () => {
   const index = new InMemorySearchIndex();
   await index.upsert([
