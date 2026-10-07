@@ -5,6 +5,7 @@ import {
   AzureSearchIndex,
   devlogChunksIndex,
   ensureDevlogIndex,
+  setupDevlogIndex,
   type DevlogDocument,
   type DocumentClient,
   type DocumentHit,
@@ -178,6 +179,82 @@ test("ensureDevlogIndex creates or updates the named index", async () => {
   );
 
   expect(calls).toEqual(["devlog-chunks:32"]);
+});
+
+function setupClient(existing?: ReturnType<typeof devlogChunksIndex>): {
+  getIndex: (name: string) => Promise<ReturnType<typeof devlogChunksIndex>>;
+  createOrUpdateIndex: (
+    index: ReturnType<typeof devlogChunksIndex>,
+  ) => Promise<ReturnType<typeof devlogChunksIndex>>;
+  writes: ReturnType<typeof devlogChunksIndex>[];
+  reads: string[];
+} {
+  const writes: ReturnType<typeof devlogChunksIndex>[] = [];
+  const reads: string[] = [];
+  return {
+    reads,
+    writes,
+    async getIndex(name) {
+      reads.push(name);
+      if (existing === undefined) {
+        throw { statusCode: 404 };
+      }
+      return existing;
+    },
+    async createOrUpdateIndex(index) {
+      writes.push(index);
+      return index;
+    },
+  };
+}
+
+test("setupDevlogIndex creates a missing index from section 7.1", async () => {
+  const client = setupClient();
+
+  await expect(setupDevlogIndex(client, "devlog-chunks", 1536)).resolves.toBe(
+    "created",
+  );
+
+  expect(client.reads).toEqual(["devlog-chunks"]);
+  expect(client.writes).toEqual([devlogChunksIndex("devlog-chunks", 1536)]);
+});
+
+test("setupDevlogIndex leaves a matching index unchanged", async () => {
+  const existing = devlogChunksIndex("devlog-chunks", 1536);
+  existing.etag = 'W/"index"';
+  const vector = existing.fields.find(
+    (field) => field.name === "contentVector",
+  );
+  if (vector !== undefined && "hidden" in vector) {
+    vector.hidden = true;
+  }
+  const client = setupClient(existing);
+
+  await expect(setupDevlogIndex(client, "devlog-chunks", 1536)).resolves.toBe(
+    "unchanged",
+  );
+  expect(client.writes).toEqual([]);
+});
+
+test("setupDevlogIndex updates an index whose dimensions differ", async () => {
+  const client = setupClient(devlogChunksIndex("devlog-chunks", 4));
+
+  await expect(setupDevlogIndex(client, "devlog-chunks", 1536)).resolves.toBe(
+    "updated",
+  );
+  expect(client.writes).toEqual([devlogChunksIndex("devlog-chunks", 1536)]);
+});
+
+test("setupDevlogIndex rethrows errors other than a missing index", async () => {
+  const client = setupClient();
+  client.getIndex = async () => {
+    throw new Error("search unavailable");
+  };
+
+  await expect(setupDevlogIndex(client, "devlog-chunks", 1536)).rejects.toThrow(
+    "search unavailable",
+  );
+  expect(client.writes).toEqual([]);
 });
 
 test("upsert stores a joined heading path and skips an empty batch", async () => {

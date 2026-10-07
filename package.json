@@ -13,6 +13,7 @@
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "dev": "tsx apps/cli/src/index.ts",
+    "cli": "node --env-file=.env --import tsx apps/cli/src/main.ts",
     "smoke:azure": "node --env-file=.env --import tsx scripts/smoke-azure.ts",
     "test:azure": "node --env-file=.env ./node_modules/vitest/vitest.mjs run packages/adapters/src/azure.integration.test.ts"
   },

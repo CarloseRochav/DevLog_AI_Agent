@@ -500,3 +500,138 @@ export async function ensureDevlogIndex(
 ): Promise<void> {
   await client.createOrUpdateIndex(devlogChunksIndex(name, dimensions));
 }
+
+const FIELD_ATTRIBUTES = [
+  "name",
+  "type",
+  "key",
+  "searchable",
+  "filterable",
+  "facetable",
+  "sortable",
+  "analyzerName",
+  "vectorSearchDimensions",
+  "vectorSearchProfileName",
+] as const;
+
+export type SetupResult = "created" | "updated" | "unchanged";
+
+export interface DevlogIndexClient {
+  getIndex(name: string): Promise<SearchIndex>;
+  createOrUpdateIndex(index: SearchIndex): Promise<SearchIndex>;
+}
+
+function isMissingIndex(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+  const record = error as { statusCode?: unknown; status?: unknown };
+  return record.statusCode === 404 || record.status === 404;
+}
+
+function fieldAttribute(
+  field: SearchIndex["fields"][number],
+  key: string,
+): unknown {
+  return (field as unknown as Record<string, unknown>)[key];
+}
+
+function fieldMatches(
+  actual: SearchIndex["fields"][number],
+  expected: SearchIndex["fields"][number],
+): boolean {
+  for (const key of FIELD_ATTRIBUTES) {
+    const expectedValue = fieldAttribute(expected, key);
+    if (expectedValue === undefined) {
+      continue;
+    }
+    if (fieldAttribute(actual, key) !== expectedValue) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function vectorMatches(actual: SearchIndex, expected: SearchIndex): boolean {
+  const expectedAlgorithms = expected.vectorSearch?.algorithms ?? [];
+  const actualAlgorithms = actual.vectorSearch?.algorithms ?? [];
+  const expectedProfiles = expected.vectorSearch?.profiles ?? [];
+  const actualProfiles = actual.vectorSearch?.profiles ?? [];
+  if (
+    actualAlgorithms.length !== expectedAlgorithms.length ||
+    actualProfiles.length !== expectedProfiles.length
+  ) {
+    return false;
+  }
+
+  const expectedAlgorithm = expectedAlgorithms[0];
+  const actualAlgorithm = actualAlgorithms.find(
+    (algorithm) => algorithm.name === expectedAlgorithm?.name,
+  );
+  if (
+    expectedAlgorithm === undefined ||
+    actualAlgorithm === undefined ||
+    actualAlgorithm.kind !== expectedAlgorithm.kind ||
+    actualAlgorithm.parameters?.metric !== expectedAlgorithm.parameters?.metric
+  ) {
+    return false;
+  }
+
+  const expectedProfile = expectedProfiles[0];
+  const actualProfile = actualProfiles.find(
+    (profile) => profile.name === expectedProfile?.name,
+  );
+  return (
+    expectedProfile !== undefined &&
+    actualProfile !== undefined &&
+    actualProfile.algorithmConfigurationName ===
+      expectedProfile.algorithmConfigurationName
+  );
+}
+
+function indexMatches(actual: SearchIndex, expected: SearchIndex): boolean {
+  if (actual.name !== expected.name) {
+    return false;
+  }
+  if (actual.fields.length !== expected.fields.length) {
+    return false;
+  }
+  for (const expectedField of expected.fields) {
+    const actualField = actual.fields.find(
+      (field) => field.name === expectedField.name,
+    );
+    if (
+      actualField === undefined ||
+      !fieldMatches(actualField, expectedField)
+    ) {
+      return false;
+    }
+  }
+  return vectorMatches(actual, expected);
+}
+
+export async function setupDevlogIndex(
+  client: DevlogIndexClient,
+  name: string,
+  dimensions: number,
+): Promise<SetupResult> {
+  const desired = devlogChunksIndex(name, dimensions);
+  let existing: SearchIndex | undefined;
+  try {
+    existing = await client.getIndex(name);
+  } catch (error) {
+    if (!isMissingIndex(error)) {
+      throw error;
+    }
+  }
+
+  if (existing === undefined) {
+    await client.createOrUpdateIndex(desired);
+    return "created";
+  }
+  if (indexMatches(existing, desired)) {
+    return "unchanged";
+  }
+  await client.createOrUpdateIndex(desired);
+  return "updated";
+}
