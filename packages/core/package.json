@@ -14,9 +14,13 @@
   },
   "dependencies": {
     "gray-matter": "4.0.3",
+    "js-tiktoken": "1.0.21",
     "remark-gfm": "4.0.1",
     "remark-parse": "11.0.0",
     "unified": "11.0.5",
     "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:"
   }
 }

@@ -4,6 +4,7 @@ export {
   InMemorySearchIndex,
 } from "./fakes.js";
 export type { Embedder, NoteStore, SearchIndex } from "./ports.js";
+export { chunkNote, type ChunkOptions } from "./ingestion/chunk.js";
 export {
   parseNote,
   ParsedBlockSchema,
