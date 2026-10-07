@@ -12,7 +12,8 @@
     "test": "vitest run",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
-    "dev": "tsx apps/cli/src/index.ts"
+    "dev": "tsx apps/cli/src/index.ts",
+    "smoke:azure": "node --env-file=.env --import tsx scripts/smoke-azure.ts"
   },
   "dependencies": {
     "zod": "catalog:"
