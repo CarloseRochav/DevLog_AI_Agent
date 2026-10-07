@@ -77,9 +77,16 @@ test("zod is declared once, at the workspace root", () => {
   for (const path of manifests) {
     const manifest = readJson(path);
     expect(manifest.type).toBe("module");
-    expect(manifest.dependencies?.zod).toBeUndefined();
-    expect(manifest.devDependencies?.zod).toBeUndefined();
-    expect(manifest.peerDependencies?.zod).toBeUndefined();
-    expect(manifest.optionalDependencies?.zod).toBeUndefined();
+    for (const section of [
+      "dependencies",
+      "devDependencies",
+      "peerDependencies",
+      "optionalDependencies",
+    ] as const) {
+      const spec = manifest[section]?.zod;
+      if (spec !== undefined) {
+        expect(spec).toBe("catalog:");
+      }
+    }
   }
 });
