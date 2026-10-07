@@ -11,5 +11,14 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@azure/search-documents": "13.0.0",
+    "@azure/storage-blob": "12.34.0",
+    "@devlog/core": "workspace:*",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:"
   }
 }
