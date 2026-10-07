@@ -11,5 +11,33 @@ export default defineConfig(
     files: ["**/*.{js,mjs,ts}"],
     extends: [js.configs.recommended, tseslint.configs.recommended],
   },
+  {
+    files: ["packages/core/**/*.ts"],
+    plugins: {
+      "@typescript-eslint": tseslint.plugin,
+    },
+    rules: {
+      "no-restricted-imports": "off",
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: [
+                "@azure/*",
+                "@azure/**",
+                "langchain",
+                "langchain/**",
+                "@langchain/*",
+                "@langchain/**",
+              ],
+              message:
+                "packages/core cannot import Azure SDKs or LangChain. Depend on a port instead.",
+            },
+          ],
+        },
+      ],
+    },
+  },
   eslintConfigPrettier,
 );
