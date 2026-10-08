@@ -19,6 +19,7 @@ export interface IndexOptions {
   maxTokens: number;
   overlapTokens: number;
   now?: string;
+  prune?: boolean;
 }
 
 export interface IndexReport {
@@ -138,9 +139,12 @@ export async function indexVault(
     toWrite.push(note);
   }
 
-  const deleted = [...indexed.keys()]
-    .filter((notePath) => !seen.has(notePath))
-    .sort((left, right) => left.localeCompare(right));
+  const deleted =
+    options.prune === false
+      ? []
+      : [...indexed.keys()]
+          .filter((notePath) => !seen.has(notePath))
+          .sort((left, right) => left.localeCompare(right));
   const indexedAt = options.now ?? new Date().toISOString();
   const prepared = toWrite.map((note) => prepare(note, options, indexedAt));
   const chunksUpserted = prepared.reduce(

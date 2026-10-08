@@ -1,3 +1,5 @@
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
 import {
   AzureEmbedder,
   AzureNoteStore,
@@ -14,13 +16,19 @@ import {
   type IndexerConfig,
 } from "@devlog/config";
 import {
+  DEFAULT_MIN_SCORE,
+  EvalError,
   IndexError,
   RetrievalError,
+  evaluateRetrieval,
   indexVault,
+  parseGoldenSet,
   retrieve,
   walkVault,
+  type EvalReport,
   type IndexReport,
   type SearchHit,
+  type SearchIndex,
 } from "@devlog/core";
 
 export const packageName = "@devlog/cli";
@@ -42,12 +50,25 @@ export interface QueryFlags {
   notePath?: string;
 }
 
+export interface EvalFlags {
+  threshold?: number;
+}
+
+export interface EvalPaths {
+  vaultDir: string;
+  goldenPath: string;
+  resultsDir: string;
+  now?: string;
+}
+
 export interface RunCliOptions {
   env: EnvSource;
   io: CliIO;
   openIndex?: (config: IndexerConfig) => DevlogIndexClient;
   runIndex?: (config: IndexerConfig, flags: IndexFlags) => Promise<IndexReport>;
   runQuery?: (config: IndexerConfig, flags: QueryFlags) => Promise<SearchHit[]>;
+  runEval?: (config: IndexerConfig, flags: EvalFlags) => Promise<EvalReport>;
+  evalPaths?: EvalPaths;
 }
 
 function usage(): string {
@@ -55,7 +76,18 @@ function usage(): string {
     "Usage: pnpm cli index:setup",
     "       pnpm cli index [--dry-run] [--full]",
     "       pnpm cli query <text> [--top N] [--tag <tag>] [--note <path>]",
+    "       pnpm cli eval [--threshold N]",
   ].join("\n");
+}
+
+const EVAL_INCLUDE = "devlog-agent/**/*.md";
+
+function defaultEvalPaths(): EvalPaths {
+  return {
+    vaultDir: path.resolve("eval/vault"),
+    goldenPath: path.resolve("eval/golden.jsonl"),
+    resultsDir: path.resolve("eval/results"),
+  };
 }
 
 function parseIndexFlags(args: readonly string[]): IndexFlags | undefined {
@@ -128,6 +160,79 @@ function parseQueryArgs(
       ...(notePath === undefined ? {} : { notePath }),
     },
   };
+}
+
+function parseEvalArgs(
+  args: readonly string[],
+): { ok: true; flags: EvalFlags } | { ok: false } {
+  let threshold: number | undefined;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg !== "--threshold") {
+      return { ok: false };
+    }
+    const value = args[index + 1];
+    if (value === undefined || value.startsWith("--")) {
+      return { ok: false };
+    }
+    index += 1;
+    if (threshold !== undefined || !/^(?:\d+)(?:\.\d+)?$/.test(value)) {
+      return { ok: false };
+    }
+    threshold = Number(value);
+  }
+  return {
+    ok: true,
+    flags: threshold === undefined ? {} : { threshold },
+  };
+}
+
+function resultFileName(timestamp: string): string {
+  return `${timestamp.replaceAll(":", "-")}.json`;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function waitForNotes(
+  index: SearchIndex,
+  notePaths: readonly string[],
+): Promise<void> {
+  const deadline = Date.now() + 45_000;
+  while (Date.now() < deadline) {
+    const hashes = await index.listNoteHashes();
+    if (notePaths.every((notePath) => hashes.has(notePath))) {
+      return;
+    }
+    await delay(1000);
+  }
+  throw new EvalError(
+    "Indexed notes were not visible in search before the deadline.",
+  );
+}
+
+async function writeEvalResult(
+  report: EvalReport,
+  resultsDir: string,
+): Promise<void> {
+  await mkdir(resultsDir, { recursive: true });
+  const body = {
+    timestamp: report.timestamp,
+    threshold: report.threshold,
+    hitAt5: report.hitAt5,
+    mrr: report.mrr,
+    negativePrecision: report.negativePrecision,
+    passed: report.passed,
+    questions: report.questions,
+  };
+  await writeFile(
+    path.join(resultsDir, resultFileName(report.timestamp)),
+    `${JSON.stringify(body, null, 2)}\n`,
+    "utf8",
+  );
 }
 
 function formatHits(hits: readonly SearchHit[]): string[] {
@@ -260,6 +365,96 @@ async function runQueryCommand(
   }
 }
 
+async function evalCommand(
+  config: IndexerConfig,
+  flags: EvalFlags,
+  paths: EvalPaths,
+): Promise<EvalReport> {
+  const embedder = new AzureEmbedder({
+    endpoint: config.AZURE_OPENAI_ENDPOINT,
+    apiKey: config.AZURE_OPENAI_API_KEY,
+    deployment: config.AZURE_OPENAI_EMBEDDING_DEPLOYMENT,
+    dimensions: config.EMBEDDING_DIMENSIONS,
+  });
+  const index = createAzureSearchIndex({
+    endpoint: config.AZURE_SEARCH_ENDPOINT,
+    apiKey: config.AZURE_SEARCH_API_KEY,
+    indexName: config.AZURE_SEARCH_INDEX,
+    embedder,
+  });
+  const store = new AzureNoteStore(
+    createNoteBlob(
+      config.AZURE_STORAGE_CONNECTION_STRING,
+      config.AZURE_STORAGE_CONTAINER,
+    ),
+  );
+  const notes = await walkVault(paths.vaultDir, EVAL_INCLUDE);
+  await indexVault(
+    notes,
+    { embedder, index, store },
+    {
+      full: false,
+      dryRun: false,
+      prune: false,
+      embeddingModel: config.AZURE_OPENAI_EMBEDDING_DEPLOYMENT,
+      embeddingDimensions: config.EMBEDDING_DIMENSIONS,
+      maxTokens: config.CHUNK_MAX_TOKENS,
+      overlapTokens: config.CHUNK_OVERLAP_TOKENS,
+    },
+  );
+  await waitForNotes(
+    index,
+    notes.map((note) => note.notePath),
+  );
+  const questions = parseGoldenSet(await readFile(paths.goldenPath, "utf8"));
+  const minScore = flags.threshold ?? DEFAULT_MIN_SCORE;
+  const hitsById = new Map<string, SearchHit[]>();
+  for (const question of questions) {
+    hitsById.set(
+      question.id,
+      await retrieve(
+        index,
+        { query: question.question, topK: 5 },
+        { minScore },
+      ),
+    );
+  }
+  return evaluateRetrieval(questions, hitsById, {
+    threshold: minScore,
+    timestamp: paths.now ?? new Date().toISOString(),
+  });
+}
+
+async function runEvalCommand(
+  config: IndexerConfig,
+  flags: EvalFlags,
+  options: RunCliOptions,
+): Promise<number> {
+  const paths = options.evalPaths ?? defaultEvalPaths();
+  try {
+    const report = await (
+      options.runEval ??
+      ((evalConfig, evalFlags) => evalCommand(evalConfig, evalFlags, paths))
+    )(config, flags);
+    for (const line of report.lines) {
+      options.io.log(line);
+    }
+    options.io.log(report.summary);
+    await writeEvalResult(report, paths.resultsDir);
+    return report.passed ? 0 : 1;
+  } catch (error) {
+    if (
+      error instanceof RetrievalError ||
+      error instanceof IndexError ||
+      error instanceof EvalError
+    ) {
+      options.io.error(error.message);
+      return 1;
+    }
+    throw error;
+  }
+}
+
 async function runIndexCommand(
   config: IndexerConfig,
   flags: IndexFlags,
@@ -286,13 +481,19 @@ export async function runCli(
   options: RunCliOptions,
 ): Promise<number> {
   const command = argv[2];
-  if (command !== "index:setup" && command !== "index" && command !== "query") {
+  if (
+    command !== "index:setup" &&
+    command !== "index" &&
+    command !== "query" &&
+    command !== "eval"
+  ) {
     options.io.error(usage());
     return 1;
   }
 
   let indexFlags: IndexFlags | undefined;
   let queryFlags: QueryFlags | undefined;
+  let evalFlags: EvalFlags | undefined;
   if (command === "index") {
     indexFlags = parseIndexFlags(argv.slice(3));
     if (indexFlags === undefined) {
@@ -310,6 +511,13 @@ export async function runCli(
       return 1;
     }
     queryFlags = parsedQuery.flags;
+  } else if (command === "eval") {
+    const parsedEval = parseEvalArgs(argv.slice(3));
+    if (!parsedEval.ok) {
+      options.io.error(usage());
+      return 1;
+    }
+    evalFlags = parsedEval.flags;
   }
 
   const parsed = readConfig(options);
@@ -319,6 +527,9 @@ export async function runCli(
 
   if (command === "query" && queryFlags !== undefined) {
     return runQueryCommand(parsed.config, queryFlags, options);
+  }
+  if (command === "eval" && evalFlags !== undefined) {
+    return runEvalCommand(parsed.config, evalFlags, options);
   }
   if (indexFlags === undefined) {
     return runSetup(parsed.config, options);

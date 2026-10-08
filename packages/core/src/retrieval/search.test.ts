@@ -62,7 +62,11 @@ test("retrieve returns path, heading path, and score from one hybrid search", as
   };
   const index = new RecordingIndex([hit]);
 
-  const hits = await retrieve(index, { query: "queue worker" });
+  const hits = await retrieve(
+    index,
+    { query: "queue worker" },
+    { minScore: 0 },
+  );
   await retrieve(index, {
     query: "queue worker",
     topK: 3,
@@ -152,4 +156,44 @@ test("retrieve rejects an invalid query before searching", async () => {
   expect(invalid).toBeInstanceOf(RetrievalError);
   expect(invalid).toMatchObject({ message: "Invalid search query." });
   expect(index.queries).toEqual([]);
+});
+
+test("retrieve drops scores below the cutoff and keeps an equal score", async () => {
+  const index = new RecordingIndex([
+    {
+      chunkId: "low",
+      notePath: "devlog-agent/Architecture.md",
+      noteTitle: "Architecture",
+      headingPath: ["Queue Worker"],
+      content: "low",
+      score: 0.01,
+      citation: "Architecture.md > Queue Worker",
+    },
+    {
+      chunkId: "equal",
+      notePath: "devlog-agent/Architecture.md",
+      noteTitle: "Architecture",
+      headingPath: ["Queue Worker"],
+      content: "equal",
+      score: 0.02,
+      citation: "Architecture.md > Queue Worker",
+    },
+    {
+      chunkId: "high",
+      notePath: "devlog-agent/Architecture.md",
+      noteTitle: "Architecture",
+      headingPath: ["Queue Worker"],
+      content: "high",
+      score: 0.03,
+      citation: "Architecture.md > Queue Worker",
+    },
+  ]);
+
+  const hits = await retrieve(
+    index,
+    { query: "queue worker" },
+    { minScore: 0.02 },
+  );
+
+  expect(hits.map((item) => item.chunkId)).toEqual(["equal", "high"]);
 });

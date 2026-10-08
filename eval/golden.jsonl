@@ -1,0 +1,15 @@
+{"id":"q01","question":"How does the worker retry failed batches?","expected":["Architecture.md#Queue Worker"],"type":"exact-name"}
+{"id":"q02","question":"Why did we choose Blob Storage over a file share?","expected":["Decisions.md"],"type":"decision"}
+{"id":"q03","question":"Where is sp_ProcessBatch called?","expected":["Queue Worker.md#Procedure Call"],"type":"exact-name"}
+{"id":"q04","question":"What port does the Batch API listen on?","expected":["Batch API.md#Listener"],"type":"exact-name"}
+{"id":"q05","question":"Why is the retry limit three attempts?","expected":["Retry Policy.md#Attempt Limit"],"type":"decision"}
+{"id":"q06","question":"How does monitoring detect a stuck queue?","expected":["Monitoring.md#Stuck Queue"],"type":"concept"}
+{"id":"q07","question":"How are batch payloads uploaded?","expected":["Storage.md#Payload Upload"],"type":"concept"}
+{"id":"q08","question":"How does the indexer skip unchanged files?","expected":["Indexer.md#Content Hash"],"type":"concept"}
+{"id":"q09","question":"Where is the payload content hash recorded after the procedure succeeds?","expected":["Queue Worker.md#Content Hash","Indexer.md#Content Hash"],"type":"cross-note"}
+{"id":"q10","question":"Which settings must be present before the worker is deployed?","expected":["Config.md#Required Settings","Deployment.md#Startup Check"],"type":"cross-note"}
+{"id":"q11","question":"How does the Batch API authenticate callers?","expected":["Security.md#API Key"],"type":"concept"}
+{"id":"q12","question":"What is the first step in the incident runbook?","expected":["Runbook.md#First Response"],"type":"concept"}
+{"id":"q13","question":"What is the on-call phone number for weekend incidents?","expected":[],"type":"negative"}
+{"id":"q14","question":"Which Kubernetes cluster runs the nightly payroll job?","expected":[],"type":"negative"}
+{"id":"q15","question":"Where are dead-lettered batches stored?","expected":["Retry Policy.md#Dead Letter"],"type":"concept"}

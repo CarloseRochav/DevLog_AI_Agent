@@ -1,7 +1,11 @@
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { devlogChunksIndex, type DevlogIndexClient } from "@devlog/adapters";
 import {
   IndexError,
   RetrievalError,
+  type EvalReport,
   type IndexReport,
   type SearchHit,
 } from "@devlog/core";
@@ -10,6 +14,8 @@ import {
   packageName,
   runCli,
   type CliIO,
+  type EvalFlags,
+  type EvalPaths,
   type IndexFlags,
   type QueryFlags,
 } from "./index.js";
@@ -113,7 +119,7 @@ test("an unknown command prints usage and does not open the index", async () => 
   const output = io();
   let opened = 0;
 
-  const code = await runCli(["node", "main.ts", "eval"], {
+  const code = await runCli(["node", "main.ts", "serve"], {
     env: indexerEnv(),
     io: output,
     openIndex: () => {
@@ -126,6 +132,7 @@ test("an unknown command prints usage and does not open the index", async () => 
   expect(opened).toBe(0);
   expect(output.errors.join("\n")).toContain("index:setup");
   expect(output.errors.join("\n")).toContain("pnpm cli query");
+  expect(output.errors.join("\n")).toContain("pnpm cli eval");
   expect(output.logs).toEqual([]);
 });
 
@@ -571,4 +578,165 @@ test("query names a missing vault path and does not search", async () => {
   expect(output.logs).toEqual([]);
   expect(output.errors.join("\n")).toContain("VAULT_PATH");
   expect(output.errors.join("\n")).not.toContain(searchKey);
+});
+
+function evalReport(overrides: Partial<EvalReport> = {}): EvalReport {
+  return {
+    timestamp: "2026-10-07T00:00:00.000Z",
+    threshold: 0,
+    hitAt5: 1,
+    mrr: 1,
+    negativePrecision: 1,
+    passed: true,
+    lines: [
+      "id  type  hit  rank  question",
+      "q01  exact-name  yes  1  How does the worker retry failed batches?",
+    ],
+    summary:
+      "hit@5 1.000 (1/1) · MRR 1.000 · negative precision 1.000 (1/1) · threshold 0",
+    questions: [
+      {
+        id: "q01",
+        type: "exact-name",
+        question: "How does the worker retry failed batches?",
+        hit: true,
+        rank: 1,
+        hits: [
+          {
+            notePath: "devlog-agent/Architecture.md",
+            headingPath: ["Queue Worker"],
+            score: 0.02,
+            citation: "Architecture.md > Queue Worker",
+          },
+        ],
+      },
+    ],
+    ...overrides,
+  };
+}
+
+async function evalDir(): Promise<{ dir: string; paths: EvalPaths }> {
+  const dir = await mkdtemp(path.join(tmpdir(), "devlog-eval-"));
+  return {
+    dir,
+    paths: {
+      vaultDir: dir,
+      goldenPath: path.join(dir, "golden.jsonl"),
+      resultsDir: dir,
+      now: "2026-10-07T00:00:00.000Z",
+    },
+  };
+}
+
+test("eval prints the table and writes the report", async () => {
+  const output = io();
+  const { dir, paths } = await evalDir();
+  let seen: EvalFlags | undefined;
+  const report = evalReport();
+
+  try {
+    const code = await runCli(["node", "main.ts", "eval", "--threshold", "0"], {
+      env: indexerEnv(),
+      io: output,
+      evalPaths: paths,
+      runEval: async (_config, flags) => {
+        seen = flags;
+        return report;
+      },
+    });
+    const written = JSON.parse(
+      await readFile(path.join(dir, "2026-10-07T00-00-00.000Z.json"), "utf8"),
+    ) as {
+      hitAt5: number;
+      questions: EvalReport["questions"];
+    };
+
+    expect(code).toBe(0);
+    expect(seen).toEqual({ threshold: 0 });
+    expect(output.logs).toEqual([...report.lines, report.summary]);
+    expect(output.errors).toEqual([]);
+    expect(output.logs.join("\n")).not.toContain(searchKey);
+    expect(written.hitAt5).toBe(1);
+    expect(written.questions).toEqual(report.questions);
+    expect(written).not.toHaveProperty("lines");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("eval exits 1 when the targets are missed and still writes the report", async () => {
+  const output = io();
+  const { dir, paths } = await evalDir();
+
+  try {
+    const code = await runCli(["node", "main.ts", "eval"], {
+      env: indexerEnv(),
+      io: output,
+      evalPaths: paths,
+      runEval: async () => evalReport({ passed: false, hitAt5: 0.5 }),
+    });
+
+    expect(code).toBe(1);
+    expect(output.logs.at(-1)).toBe(
+      "hit@5 1.000 (1/1) · MRR 1.000 · negative precision 1.000 (1/1) · threshold 0",
+    );
+    const written = JSON.parse(
+      await readFile(path.join(dir, "2026-10-07T00-00-00.000Z.json"), "utf8"),
+    ) as { passed: boolean };
+    expect(written.passed).toBe(false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("an unknown eval flag prints usage and does not evaluate", async () => {
+  const output = io();
+  let called = 0;
+
+  const code = await runCli(["node", "main.ts", "eval", "--bogus"], {
+    env: indexerEnv(),
+    io: output,
+    runEval: async () => {
+      called += 1;
+      return evalReport();
+    },
+  });
+
+  expect(code).toBe(1);
+  expect(called).toBe(0);
+  expect(output.logs).toEqual([]);
+  expect(output.errors.join("\n")).toContain("pnpm cli eval");
+});
+
+test("eval names a missing vault path and does not evaluate", async () => {
+  const output = io();
+  const env = indexerEnv();
+  delete env.VAULT_PATH;
+  let called = 0;
+
+  const code = await runCli(["node", "main.ts", "eval"], {
+    env,
+    io: output,
+    runEval: async () => {
+      called += 1;
+      return evalReport();
+    },
+  });
+
+  expect(code).toBe(1);
+  expect(called).toBe(0);
+  expect(output.errors.join("\n")).toContain("VAULT_PATH");
+  expect(output.errors.join("\n")).not.toContain(searchKey);
+});
+
+test("eval rethrows errors that are not an eval failure", async () => {
+  await expect(
+    runCli(["node", "main.ts", "eval"], {
+      env: indexerEnv(),
+      io: io(),
+      runEval: async () => {
+        throw new Error("boom");
+      },
+    }),
+  ).rejects.toThrow("boom");
 });

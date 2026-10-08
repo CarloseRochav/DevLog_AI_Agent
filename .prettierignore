@@ -4,4 +4,5 @@ coverage
 pnpm-lock.yaml
 docs
 packages/core/src/ingestion/fixtures
+eval/vault
 *.snap

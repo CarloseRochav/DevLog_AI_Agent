@@ -17,7 +17,24 @@ export {
   type IndexReport,
 } from "./ingestion/index-vault.js";
 export { walkVault, type VaultNote } from "./ingestion/walk.js";
-export { RetrievalError, retrieve } from "./retrieval/search.js";
+export {
+  RetrievalError,
+  retrieve,
+  DEFAULT_MIN_SCORE,
+} from "./retrieval/search.js";
+export {
+  EvalError,
+  GoldenQuestionSchema,
+  matchesSource,
+  parseGoldenSet,
+  type GoldenQuestion,
+} from "./eval/golden.js";
+export {
+  evaluateRetrieval,
+  type EvalHitSummary,
+  type EvalQuestionResult,
+  type EvalReport,
+} from "./eval/metrics.js";
 export {
   parseNote,
   ParsedBlockSchema,

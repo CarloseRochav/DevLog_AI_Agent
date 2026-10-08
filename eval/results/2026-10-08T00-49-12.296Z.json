@@ -1,0 +1,207 @@
+{
+  "timestamp": "2026-10-08T00:49:12.296Z",
+  "threshold": 0.0332,
+  "hitAt5": 0.8461538461538461,
+  "mrr": 0.8461538461538461,
+  "negativePrecision": 1,
+  "passed": true,
+  "questions": [
+    {
+      "id": "q01",
+      "type": "exact-name",
+      "question": "How does the worker retry failed batches?",
+      "hit": false,
+      "rank": null,
+      "hits": []
+    },
+    {
+      "id": "q02",
+      "type": "decision",
+      "question": "Why did we choose Blob Storage over a file share?",
+      "hit": true,
+      "rank": 1,
+      "hits": [
+        {
+          "notePath": "devlog-agent/Decisions.md",
+          "headingPath": ["Decisions", "Blob Storage"],
+          "score": 0.03333333507180214,
+          "citation": "Decisions.md > Decisions > Blob Storage"
+        }
+      ]
+    },
+    {
+      "id": "q03",
+      "type": "exact-name",
+      "question": "Where is sp_ProcessBatch called?",
+      "hit": true,
+      "rank": 1,
+      "hits": [
+        {
+          "notePath": "devlog-agent/Queue Worker.md",
+          "headingPath": ["Queue Worker", "Procedure Call"],
+          "score": 0.03333333507180214,
+          "citation": "Queue Worker.md > Queue Worker > Procedure Call"
+        }
+      ]
+    },
+    {
+      "id": "q04",
+      "type": "exact-name",
+      "question": "What port does the Batch API listen on?",
+      "hit": true,
+      "rank": 1,
+      "hits": [
+        {
+          "notePath": "devlog-agent/Batch API.md",
+          "headingPath": ["Batch API", "Listener"],
+          "score": 0.03333333507180214,
+          "citation": "Batch API.md > Batch API > Listener"
+        }
+      ]
+    },
+    {
+      "id": "q05",
+      "type": "decision",
+      "question": "Why is the retry limit three attempts?",
+      "hit": true,
+      "rank": 1,
+      "hits": [
+        {
+          "notePath": "devlog-agent/Retry Policy.md",
+          "headingPath": ["Retry Policy", "Attempt Limit"],
+          "score": 0.03333333507180214,
+          "citation": "Retry Policy.md > Retry Policy > Attempt Limit"
+        }
+      ]
+    },
+    {
+      "id": "q06",
+      "type": "concept",
+      "question": "How does monitoring detect a stuck queue?",
+      "hit": true,
+      "rank": 1,
+      "hits": [
+        {
+          "notePath": "devlog-agent/Monitoring.md",
+          "headingPath": ["Monitoring", "Stuck Queue"],
+          "score": 0.03333333507180214,
+          "citation": "Monitoring.md > Monitoring > Stuck Queue"
+        }
+      ]
+    },
+    {
+      "id": "q07",
+      "type": "concept",
+      "question": "How are batch payloads uploaded?",
+      "hit": true,
+      "rank": 1,
+      "hits": [
+        {
+          "notePath": "devlog-agent/Storage.md",
+          "headingPath": ["Storage", "Payload Upload"],
+          "score": 0.03333333507180214,
+          "citation": "Storage.md > Storage > Payload Upload"
+        }
+      ]
+    },
+    {
+      "id": "q08",
+      "type": "concept",
+      "question": "How does the indexer skip unchanged files?",
+      "hit": true,
+      "rank": 1,
+      "hits": [
+        {
+          "notePath": "devlog-agent/Indexer.md",
+          "headingPath": ["Indexer", "Content Hash"],
+          "score": 0.03333333507180214,
+          "citation": "Indexer.md > Indexer > Content Hash"
+        }
+      ]
+    },
+    {
+      "id": "q09",
+      "type": "cross-note",
+      "question": "Where is the payload content hash recorded after the procedure succeeds?",
+      "hit": true,
+      "rank": 1,
+      "hits": [
+        {
+          "notePath": "devlog-agent/Queue Worker.md",
+          "headingPath": ["Queue Worker", "Content Hash"],
+          "score": 0.03333333507180214,
+          "citation": "Queue Worker.md > Queue Worker > Content Hash"
+        }
+      ]
+    },
+    {
+      "id": "q10",
+      "type": "cross-note",
+      "question": "Which settings must be present before the worker is deployed?",
+      "hit": true,
+      "rank": 1,
+      "hits": [
+        {
+          "notePath": "devlog-agent/Config.md",
+          "headingPath": ["Config", "Required Settings"],
+          "score": 0.03333333507180214,
+          "citation": "Config.md > Config > Required Settings"
+        }
+      ]
+    },
+    {
+      "id": "q11",
+      "type": "concept",
+      "question": "How does the Batch API authenticate callers?",
+      "hit": false,
+      "rank": null,
+      "hits": []
+    },
+    {
+      "id": "q12",
+      "type": "concept",
+      "question": "What is the first step in the incident runbook?",
+      "hit": true,
+      "rank": 1,
+      "hits": [
+        {
+          "notePath": "devlog-agent/Runbook.md",
+          "headingPath": ["Runbook", "First Response"],
+          "score": 0.03333333507180214,
+          "citation": "Runbook.md > Runbook > First Response"
+        }
+      ]
+    },
+    {
+      "id": "q13",
+      "type": "negative",
+      "question": "What is the on-call phone number for weekend incidents?",
+      "hit": true,
+      "rank": null,
+      "hits": []
+    },
+    {
+      "id": "q14",
+      "type": "negative",
+      "question": "Which Kubernetes cluster runs the nightly payroll job?",
+      "hit": true,
+      "rank": null,
+      "hits": []
+    },
+    {
+      "id": "q15",
+      "type": "concept",
+      "question": "Where are dead-lettered batches stored?",
+      "hit": true,
+      "rank": 1,
+      "hits": [
+        {
+          "notePath": "devlog-agent/Retry Policy.md",
+          "headingPath": ["Retry Policy", "Dead Letter"],
+          "score": 0.03333333507180214,
+          "citation": "Retry Policy.md > Retry Policy > Dead Letter"
+        }
+      ]
+    }
+  ]
+}

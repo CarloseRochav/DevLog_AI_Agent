@@ -176,6 +176,31 @@ test("deleting one note removes its chunks and blob", async () => {
   expect(await deps.store.get(decisions.notePath)).toBe(decisions.markdown);
 });
 
+test("prune false leaves notes that are outside this run", async () => {
+  const deps = harness();
+  await indexVault([architecture, decisions], deps, options());
+  deps.deleted.length = 0;
+
+  const report = await indexVault([decisions], deps, options({ prune: false }));
+  const dryRun = await indexVault(
+    [decisions],
+    deps,
+    options({ prune: false, dryRun: true }),
+  );
+
+  expect(report.deleted).toBe(0);
+  expect(report.changed).toBe(0);
+  expect(deps.deleted).toEqual([]);
+  expect(await deps.store.get(architecture.notePath)).toBe(
+    architecture.markdown,
+  );
+  expect((await deps.index.listNoteHashes()).has(architecture.notePath)).toBe(
+    true,
+  );
+  expect(dryRun.deleted).toBe(0);
+  expect(dryRun.lines.join("\n")).not.toContain("delete ");
+});
+
 test("dry-run prints chunks and writes nothing", async () => {
   const deps = harness();
   await indexVault([architecture], deps, options());
