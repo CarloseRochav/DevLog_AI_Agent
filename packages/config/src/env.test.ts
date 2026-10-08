@@ -120,7 +120,7 @@ test("the indexer requires VAULT_PATH", () => {
 
   const config = parseIndexerEnv(serverSource({ VAULT_PATH: "C:/notes" }));
   expect(config.VAULT_PATH).toBe("C:/notes");
-  expect(config.VAULT_INCLUDE).toBe("<PROJECT_FOLDER>/**/*.md");
+  expect(config.VAULT_INCLUDE).toBe("devlog-agent/**/*.md");
   expect(config.CHUNK_MAX_TOKENS).toBe(700);
   expect(config.CHUNK_OVERLAP_TOKENS).toBe(80);
   expect(config.AZURE_SEARCH_INDEX).toBe("devlog-chunks");

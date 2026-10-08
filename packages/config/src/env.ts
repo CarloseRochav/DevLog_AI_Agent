@@ -35,7 +35,7 @@ export const ServerEnv = Base.extend({
 
 export const IndexerEnv = Base.extend({
   VAULT_PATH: z.string().min(1),
-  VAULT_INCLUDE: z.string().default("<PROJECT_FOLDER>/**/*.md"),
+  VAULT_INCLUDE: z.string().default("devlog-agent/**/*.md"),
   CHUNK_MAX_TOKENS: z.coerce.number().int().default(700),
   CHUNK_OVERLAP_TOKENS: z.coerce.number().int().default(80),
 });
