@@ -196,7 +196,7 @@ export const ServerEnv = Base.extend({
 
 export const IndexerEnv = Base.extend({
   VAULT_PATH: z.string().min(1),
-  VAULT_INCLUDE: z.string().default("devlog-agent/**/*.md"),
+  VAULT_INCLUDE: z.string().default("<PROJECT_FOLDER>/**/*.md"),
   CHUNK_MAX_TOKENS: z.coerce.number().int().default(700),
   CHUNK_OVERLAP_TOKENS: z.coerce.number().int().default(80),
 });
@@ -336,8 +336,8 @@ The agent is a LangChain v1 `createAgent` with three tools; it decides when to s
 ### 8.1 Packages
 
 - `langchain` (v1): `createAgent`, `tool`, middleware
-- `@langchain/openai`: `ChatOpenAI` on the Foundry `/openai/v1` route, `AzureOpenAIEmbeddings`
-- `@langchain/langgraph` 1.4.20: `MemorySaver` checkpointer for conversation state. This is the version `langchain@1.5.15` resolves.
+- `@langchain/openai`: `AzureChatOpenAI`, `AzureOpenAIEmbeddings`
+- `@langchain/langgraph`: `MemorySaver` checkpointer for conversation state
 - Not used: `@langchain/classic`, `AgentExecutor`, `BufferWindowMemory`, LangChain vector store wrappers (retrieval stays in `core`)
 
 ### 8.2 Tools
@@ -383,7 +383,6 @@ export function createDevlogAgent(cfg: ServerConfig, deps: ToolDeps, options: Cr
     model: cfg.AZURE_OPENAI_CHAT_DEPLOYMENT,
     apiKey: cfg.AZURE_OPENAI_API_KEY,
     temperature: cfg.CHAT_TEMPERATURE,
-    useResponsesApi: false,
     configuration: {
       baseURL: `${cfg.AZURE_OPENAI_ENDPOINT.replace(/\/$/, "")}/openai/v1`,
       defaultHeaders: { "api-key": cfg.AZURE_OPENAI_API_KEY },
@@ -396,10 +395,10 @@ export function createDevlogAgent(cfg: ServerConfig, deps: ToolDeps, options: Cr
     systemPrompt: SYSTEM_PROMPT,
     checkpointer: new MemorySaver(), // thread_id = conversationId
     middleware: [
-      resumeAfterBlockedToolsMiddleware(), // first; see the decision below
+      resumeAfterBlockedToolsMiddleware(), // langchain 1.5.15 ends the run after a fully blocked tool batch; this returns to the model
       modelCallLimitMiddleware({ runLimit: 8 }),
       toolCallLimitMiddleware({ runLimit: 6 }),
-      trimHistoryMiddleware(cfg.HISTORY_MAX_MESSAGES), // wrapModelCall; checkpoint history stays
+      trimHistoryMiddleware(cfg.HISTORY_MAX_MESSAGES), // wrapModelCall: trims what the model sees; the checkpoint keeps the full thread
     ],
   });
 }
@@ -409,11 +408,9 @@ export function createDevlogAgent(cfg: ServerConfig, deps: ToolDeps, options: Cr
 
 - The chat model uses `ChatOpenAI` pointed at the Foundry `/openai/v1` route, not `AzureChatOpenAI` with an api-version. Exact option names are verified against the installed `@langchain/openai` before coding.
 - `options.model` is injectable so the wiring test never calls Azure.
-- Middleware names verified against installed `langchain@1.5.15`. Limits: 8 model calls and 6 tool calls per run.
-- `@langchain/langgraph` is pinned to 1.4.20 so the app has one copy, the same copy `langchain@1.5.15` resolves.
-- `resumeAfterBlockedToolsMiddleware` is first. In langchain 1.5.15, `toolCallLimitMiddleware` appends error ToolMessages for a fully blocked batch and the agent router then ends the run. The hook jumps back to the model so it can still answer.
-- History is trimmed by message count, not summarized: summarization costs an extra model call and can drop citations.
-- Trim uses `wrapModelCall`. It changes the messages sent to the model and does not delete checkpoint history. Older turns drop from the front on a user-message boundary. The current turn is never trimmed. A tool result stays with the assistant message that requested it.
+- Middleware names verified against installed `langchain@1.5.15`. Limits: 8 model calls and 6 tool calls per run. Pins from T2.2: langchain 1.5.15, @langchain/langgraph 1.4.20 (the version langchain resolves), ChatOpenAI with useResponsesApi: false.
+- History is trimmed by message count inside wrapModelCall, not summarized: summarization costs an extra model call and can drop citations.
+- Trimming rules: keep the newest `HISTORY_MAX_MESSAGES`; never leave a tool result without the assistant message that requested it (cut at a user-message boundary); never trim the current turn.
 
 ### 8.4 System prompt (v1)
 
@@ -424,10 +421,10 @@ using only the project's notes, which you reach through your tools.
 Rules:
 - Search before answering any question about the project. Search again with
   different terms if the first results are weak.
-- If two searches return nothing on-topic, stop and refuse. Do not read notes
-  just to be sure.
-- Every factual claim cites its source by copying the search hit's citation
-  field exactly, in brackets. Example: [Monitoring.md > Stuck Queue].
+- Every factual claim cites its source in square brackets, copying the search hit's
+  citation field exactly, for example [Monitoring.md > Stuck Queue].
+- If two searches return nothing on-topic, stop searching and answer that the
+  notes don't cover it. Do not read notes just to be sure.
 - If the notes don't cover the question, begin your answer with exactly:
   "The notes don't cover this." Do not fill gaps with general knowledge;
   you may offer general guidance only if clearly labeled as not from the notes.
@@ -482,7 +479,9 @@ One JSON object per line, validated with zod:
 | --- | --- | --- |
 | hit@5 | Share of questions with at least one expected source in the top 5 | ≥ 0.8 |
 | MRR | Mean of 1 / rank of the first expected source | Tracked, no target yet |
-| Negative precision | Share of `negative` questions where all hits fall below the score threshold | ≥ 0.5 |
+| Negative precision | Retired at retrieval level (Oct 7): RRF scores can't separate off-topic hits (q13's top hit scored 0.0331, the same as real rank-2 hits). Negatives are checked at the agent level instead: the answer starts with "The notes don't cover this." | q13, q14 refuse (agent check) |
+
+**Baseline (Oct 7, threshold 0):** hit@5 1.00 (13/13), MRR 0.923. q01 and q11 are found at rank 2.
 
 ### 9.3 Running it
 
@@ -528,11 +527,11 @@ Sixteen tasks across three phases; each is sized for one working session and is 
 
 ### Phase 2: Agent and chat API
 
-- [ ] **T2.1 Core tool definitions** \[FR-AGT-03\].
+- [x] **T2.1 Core tool definitions** \[FR-AGT-03\].
   - `search_architecture_docs`, `read_note`, `list_notes` in `core/tools`, unit-tested with fakes.
-- [ ] **T2.2 Agent package** \[FR-AGT-01, FR-AGT-02\].
+- [x] **T2.2 Agent package** \[FR-AGT-01, FR-AGT-02\].
   - `createDevlogAgent()` per section 8.3; a test with a fake model verifies the tool wiring.
-  - Manual check: 5 golden questions answered with citations copied from the search hit `citation` field; 2 negative questions begin with exactly "The notes don't cover this."
+  - Manual check: 5 golden questions answered with citations; 2 negative questions answered starting with exactly "The notes don't cover this.".
 - [ ] **T2.3 Server: auth, health, logging** \[NFR-SEC-01, NFR-OBS-01\].
   - Missing or wrong `x-api-key` returns 401; logs show request ID, latency, tool calls, token usage.
 - [ ] **T2.4 `POST /chat` with SSE** \[FR-API-01, FR-API-02\].
@@ -566,9 +565,7 @@ The biggest risk is the free search tier disappearing; it is acceptable only bec
 - [x] HTTP framework for `apps/server`: Express (familiar) or Fastify (built-in schema validation).
 
   **Decided (Oct 6):** Express; request validation stays in zod.
-- [x] Project name and folder for `<PROJECT_NAME>` and `VAULT_INCLUDE`.
-
-  **Decided (Oct 7):** DevLog Agent. The vault folder is `devlog-agent`, and `VAULT_INCLUDE` defaults to `devlog-agent/**/*.md`.
+- [ ] Project name and folder for `<PROJECT_NAME>` and `VAULT_INCLUDE`.
 
 ### Future phases
 

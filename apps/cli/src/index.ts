@@ -16,7 +16,6 @@ import {
   type IndexerConfig,
 } from "@devlog/config";
 import {
-  DEFAULT_MIN_SCORE,
   EvalError,
   IndexError,
   RetrievalError,
@@ -183,7 +182,7 @@ function parseEvalArgs(
   }
   return {
     ok: true,
-    flags: threshold === undefined ? {} : { threshold },
+    flags: { threshold: threshold ?? 0 },
   };
 }
 
@@ -224,7 +223,6 @@ async function writeEvalResult(
     threshold: report.threshold,
     hitAt5: report.hitAt5,
     mrr: report.mrr,
-    negativePrecision: report.negativePrecision,
     passed: report.passed,
     questions: report.questions,
   };
@@ -407,7 +405,7 @@ async function evalCommand(
     notes.map((note) => note.notePath),
   );
   const questions = parseGoldenSet(await readFile(paths.goldenPath, "utf8"));
-  const minScore = flags.threshold ?? DEFAULT_MIN_SCORE;
+  const minScore = flags.threshold ?? 0;
   const hitsById = new Map<string, SearchHit[]>();
   for (const question of questions) {
     hitsById.set(

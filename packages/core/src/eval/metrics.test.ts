@@ -47,7 +47,7 @@ test("a source matches the file name, the full path, or one heading", () => {
   expect(matchesSource(architecture, "Decisions.md")).toBe(false);
 });
 
-test("evaluateRetrieval scores hit@5, MRR, and negative precision", () => {
+test("evaluateRetrieval scores hit@5 and MRR and reports negative top scores", () => {
   const questions = parseGoldenSet(
     [
       '{"id":"q01","question":"How does the worker retry failed batches?","expected":["Architecture.md#Queue Worker"],"type":"exact-name"}',
@@ -82,22 +82,29 @@ test("evaluateRetrieval scores hit@5, MRR, and negative precision", () => {
 
   expect(report.hitAt5).toBe(0.5);
   expect(report.mrr).toBe(0.5);
-  expect(report.negativePrecision).toBe(0.5);
   expect(report.passed).toBe(false);
   expect(report.questions.map((question) => question.hit)).toEqual([
     true,
     false,
-    true,
-    false,
+    null,
+    null,
+  ]);
+  expect(report.questions.map((question) => question.topScore)).toEqual([
+    0.02,
+    0.02,
+    null,
+    0.01,
   ]);
   expect(report.questions[1]?.rank).toBeNull();
-  expect(report.lines[0]).toBe("id  type  hit  rank  question");
+  expect(report.questions[2]?.rank).toBeNull();
+  expect(report.lines[0]).toBe("id  type  hit  rank  top  question");
   expect(report.lines[1]).toBe(
-    "q01  exact-name  yes  1  How does the worker retry failed batches?",
+    "q01  exact-name  yes  1  0.0200  How does the worker retry failed batches?",
   );
-  expect(report.summary).toBe(
-    "hit@5 0.500 (1/2) · MRR 0.500 · negative precision 0.500 (1/2) · threshold 0",
+  expect(report.lines[3]).toBe(
+    "q03  negative  -  -  -  What is the on-call phone number for weekend incidents?",
   );
+  expect(report.summary).toBe("hit@5 0.500 (1/2) · MRR 0.500 · threshold 0");
 });
 
 test("a match past rank 5 misses hit@5 and still counts in MRR", () => {
@@ -123,15 +130,23 @@ test("a match past rank 5 misses hit@5 and still counts in MRR", () => {
     { threshold: 0.02, timestamp: "2026-10-07T00:00:00.000Z" },
   );
 
-  expect(report.questions[0]).toMatchObject({ hit: false, rank: 6 });
+  expect(report.questions[0]).toMatchObject({
+    hit: false,
+    rank: 6,
+    topScore: 0.02,
+  });
+  expect(report.questions[1]).toMatchObject({
+    hit: null,
+    rank: null,
+    topScore: null,
+  });
   expect(report.hitAt5).toBe(0);
   expect(report.mrr).toBeCloseTo(1 / 6);
-  expect(report.negativePrecision).toBe(1);
   expect(report.passed).toBe(false);
-  expect(report.summary).toContain("threshold 0.02");
+  expect(report.summary).toBe("hit@5 0.000 (0/1) · MRR 0.167 · threshold 0.02");
 });
 
-test("four of five hits and half the negatives pass", () => {
+test("four of five hits pass when every negative question still has a hit", () => {
   const lines = [1, 2, 3, 4, 5].map(
     (id) =>
       `{"id":"q0${id}","question":"Where is item ${id} documented clearly?","expected":["Architecture.md#Queue Worker"],"type":"concept"}`,
@@ -152,8 +167,8 @@ test("four of five hits and half the negatives pass", () => {
       headingPath: [],
     }),
   ]);
-  hits.set("n1", []);
-  hits.set("n2", [hit({ chunkId: "noise" })]);
+  hits.set("n1", [hit({ chunkId: "noise-a", score: 0.0331 })]);
+  hits.set("n2", [hit({ chunkId: "noise-b", score: 0.01 })]);
 
   const report = evaluateRetrieval(questions, hits, {
     threshold: 0,
@@ -162,11 +177,14 @@ test("four of five hits and half the negatives pass", () => {
 
   expect(report.hitAt5).toBe(0.8);
   expect(report.mrr).toBe(0.8);
-  expect(report.negativePrecision).toBe(0.5);
   expect(report.passed).toBe(true);
-  expect(report.summary).toBe(
-    "hit@5 0.800 (4/5) · MRR 0.800 · negative precision 0.500 (1/2) · threshold 0",
-  );
+  expect(
+    report.questions.find((question) => question.id === "n1"),
+  ).toMatchObject({ hit: null, rank: null, topScore: 0.0331 });
+  expect(
+    report.questions.find((question) => question.id === "n2"),
+  ).toMatchObject({ hit: null, rank: null, topScore: 0.01 });
+  expect(report.summary).toBe("hit@5 0.800 (4/5) · MRR 0.800 · threshold 0");
 });
 
 test("parseGoldenSet rejects a bad line and a duplicated id", () => {

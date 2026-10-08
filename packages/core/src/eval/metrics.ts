@@ -11,8 +11,11 @@ export interface EvalQuestionResult {
   id: string;
   type: GoldenQuestion["type"];
   question: string;
-  hit: boolean;
+  /** Null for a negative question. Those rows are informational and do not affect `passed`. */
+  hit: boolean | null;
   rank: number | null;
+  /** Highest retrieved score, or null when the question returned no hits. */
+  topScore: number | null;
   hits: EvalHitSummary[];
 }
 
@@ -21,7 +24,6 @@ export interface EvalReport {
   threshold: number;
   hitAt5: number;
   mrr: number;
-  negativePrecision: number;
   passed: boolean;
   questions: EvalQuestionResult[];
   lines: string[];
@@ -67,6 +69,27 @@ function ratio(part: number, total: number): number {
   return part / total;
 }
 
+function topScore(hits: readonly ScoredHit[]): number | null {
+  if (hits.length === 0) {
+    return null;
+  }
+  return Math.max(...hits.map((hit) => hit.score));
+}
+
+function formatHit(hit: boolean | null): string {
+  if (hit === null) {
+    return "-";
+  }
+  return hit ? "yes" : "no";
+}
+
+function formatTop(score: number | null): string {
+  if (score === null) {
+    return "-";
+  }
+  return score.toFixed(4);
+}
+
 export function evaluateRetrieval(
   questions: readonly GoldenQuestion[],
   hitsById: ReadonlyMap<string, readonly ScoredHit[]>,
@@ -75,24 +98,19 @@ export function evaluateRetrieval(
   let scored = 0;
   let hitCount = 0;
   let reciprocal = 0;
-  let negativeTotal = 0;
-  let negativeHit = 0;
   const results: EvalQuestionResult[] = [];
 
   for (const question of questions) {
     const hits = hitsById.get(question.id) ?? [];
+    const best = topScore(hits);
     if (question.type === "negative") {
-      negativeTotal += 1;
-      const clear = hits.length === 0;
-      if (clear) {
-        negativeHit += 1;
-      }
       results.push({
         id: question.id,
         type: question.type,
         question: question.question,
-        hit: clear,
+        hit: null,
         rank: null,
+        topScore: best,
         hits: hits.map(summarize),
       });
       continue;
@@ -111,33 +129,28 @@ export function evaluateRetrieval(
       question: question.question,
       hit: found,
       rank,
+      topScore: best,
       hits: hits.map(summarize),
     });
   }
 
   const hitAt5 = ratio(hitCount, scored);
   const mrr = ratio(reciprocal, scored);
-  const negativePrecision = ratio(negativeHit, negativeTotal);
-  const passed =
-    scored > 0 &&
-    negativeTotal > 0 &&
-    hitCount * 5 >= scored * 4 &&
-    negativeHit * 2 >= negativeTotal;
+  const passed = scored > 0 && hitCount * 5 >= scored * 4;
   const lines = [
-    "id  type  hit  rank  question",
+    "id  type  hit  rank  top  question",
     ...results.map(
       (result) =>
-        `${result.id}  ${result.type}  ${result.hit ? "yes" : "no"}  ${result.rank ?? "-"}  ${result.question}`,
+        `${result.id}  ${result.type}  ${formatHit(result.hit)}  ${result.rank ?? "-"}  ${formatTop(result.topScore)}  ${result.question}`,
     ),
   ];
-  const summary = `hit@5 ${hitAt5.toFixed(3)} (${hitCount}/${scored}) · MRR ${mrr.toFixed(3)} · negative precision ${negativePrecision.toFixed(3)} (${negativeHit}/${negativeTotal}) · threshold ${String(options.threshold)}`;
+  const summary = `hit@5 ${hitAt5.toFixed(3)} (${hitCount}/${scored}) · MRR ${mrr.toFixed(3)} · threshold ${String(options.threshold)}`;
 
   return {
     timestamp: options.timestamp,
     threshold: options.threshold,
     hitAt5,
     mrr,
-    negativePrecision,
     passed,
     questions: results,
     lines,

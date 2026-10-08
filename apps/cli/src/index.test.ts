@@ -586,14 +586,12 @@ function evalReport(overrides: Partial<EvalReport> = {}): EvalReport {
     threshold: 0,
     hitAt5: 1,
     mrr: 1,
-    negativePrecision: 1,
     passed: true,
     lines: [
-      "id  type  hit  rank  question",
-      "q01  exact-name  yes  1  How does the worker retry failed batches?",
+      "id  type  hit  rank  top  question",
+      "q01  exact-name  yes  1  0.0200  How does the worker retry failed batches?",
     ],
-    summary:
-      "hit@5 1.000 (1/1) · MRR 1.000 · negative precision 1.000 (1/1) · threshold 0",
+    summary: "hit@5 1.000 (1/1) · MRR 1.000 · threshold 0",
     questions: [
       {
         id: "q01",
@@ -601,6 +599,7 @@ function evalReport(overrides: Partial<EvalReport> = {}): EvalReport {
         question: "How does the worker retry failed batches?",
         hit: true,
         rank: 1,
+        topScore: 0.02,
         hits: [
           {
             notePath: "devlog-agent/Architecture.md",
@@ -659,6 +658,7 @@ test("eval prints the table and writes the report", async () => {
     expect(written.hitAt5).toBe(1);
     expect(written.questions).toEqual(report.questions);
     expect(written).not.toHaveProperty("lines");
+    expect(written).not.toHaveProperty("negativePrecision");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -667,18 +667,23 @@ test("eval prints the table and writes the report", async () => {
 test("eval exits 1 when the targets are missed and still writes the report", async () => {
   const output = io();
   const { dir, paths } = await evalDir();
+  let seen: EvalFlags | undefined;
 
   try {
     const code = await runCli(["node", "main.ts", "eval"], {
       env: indexerEnv(),
       io: output,
       evalPaths: paths,
-      runEval: async () => evalReport({ passed: false, hitAt5: 0.5 }),
+      runEval: async (_config, flags) => {
+        seen = flags;
+        return evalReport({ passed: false, hitAt5: 0.5 });
+      },
     });
 
     expect(code).toBe(1);
+    expect(seen).toEqual({ threshold: 0 });
     expect(output.logs.at(-1)).toBe(
-      "hit@5 1.000 (1/1) · MRR 1.000 · negative precision 1.000 (1/1) · threshold 0",
+      "hit@5 1.000 (1/1) · MRR 1.000 · threshold 0",
     );
     const written = JSON.parse(
       await readFile(path.join(dir, "2026-10-07T00-00-00.000Z.json"), "utf8"),
