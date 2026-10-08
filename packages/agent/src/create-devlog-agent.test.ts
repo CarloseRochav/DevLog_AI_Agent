@@ -133,6 +133,10 @@ test("createDevlogAgent runs search_architecture_docs and read_note", async () =
     .join("\n");
 
   expect(SYSTEM_PROMPT).toContain("The notes don't cover this.");
+  expect(SYSTEM_PROMPT).toContain(
+    "If two searches return nothing on-topic, stop and refuse.",
+  );
+  expect(SYSTEM_PROMPT).toContain("[Monitoring.md > Stuck Queue]");
   expect(promptText).toContain(SYSTEM_PROMPT);
   expect(toolText).toContain("devlog-agent/Queue Worker.md");
   expect(toolText).toContain("The worker calls sp_ProcessBatch.");
