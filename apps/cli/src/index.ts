@@ -15,9 +15,12 @@ import {
 } from "@devlog/config";
 import {
   IndexError,
+  RetrievalError,
   indexVault,
+  retrieve,
   walkVault,
   type IndexReport,
+  type SearchHit,
 } from "@devlog/core";
 
 export const packageName = "@devlog/cli";
@@ -32,17 +35,26 @@ export interface IndexFlags {
   full: boolean;
 }
 
+export interface QueryFlags {
+  query: string;
+  topK: number;
+  tags: string[];
+  notePath?: string;
+}
+
 export interface RunCliOptions {
   env: EnvSource;
   io: CliIO;
   openIndex?: (config: IndexerConfig) => DevlogIndexClient;
   runIndex?: (config: IndexerConfig, flags: IndexFlags) => Promise<IndexReport>;
+  runQuery?: (config: IndexerConfig, flags: QueryFlags) => Promise<SearchHit[]>;
 }
 
 function usage(): string {
   return [
     "Usage: pnpm cli index:setup",
     "       pnpm cli index [--dry-run] [--full]",
+    "       pnpm cli query <text> [--top N] [--tag <tag>] [--note <path>]",
   ].join("\n");
 }
 
@@ -59,6 +71,78 @@ function parseIndexFlags(args: readonly string[]): IndexFlags | undefined {
     }
   }
   return { dryRun, full };
+}
+
+function parseQueryArgs(
+  args: readonly string[],
+): { ok: true; flags: QueryFlags } | { ok: false; reason: "usage" | "short" } {
+  let query: string | undefined;
+  let topK = 5;
+  const tags: string[] = [];
+  let notePath: string | undefined;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === undefined) {
+      return { ok: false, reason: "usage" };
+    }
+    if (arg === "--top" || arg === "--tag" || arg === "--note") {
+      const value = args[index + 1];
+      if (value === undefined || value.startsWith("--")) {
+        return { ok: false, reason: "usage" };
+      }
+      index += 1;
+      if (arg === "--top") {
+        if (!/^(?:[1-9]|10)$/.test(value)) {
+          return { ok: false, reason: "usage" };
+        }
+        topK = Number(value);
+      } else if (arg === "--tag") {
+        tags.push(value);
+      } else if (notePath !== undefined) {
+        return { ok: false, reason: "usage" };
+      } else {
+        notePath = value;
+      }
+      continue;
+    }
+    if (arg.startsWith("--") || query !== undefined) {
+      return { ok: false, reason: "usage" };
+    }
+    query = arg;
+  }
+
+  if (query === undefined) {
+    return { ok: false, reason: "usage" };
+  }
+  if (query.length < 3) {
+    return { ok: false, reason: "short" };
+  }
+
+  return {
+    ok: true,
+    flags: {
+      query,
+      topK,
+      tags,
+      ...(notePath === undefined ? {} : { notePath }),
+    },
+  };
+}
+
+function formatHits(hits: readonly SearchHit[]): string[] {
+  if (hits.length === 0) {
+    return ["0 hits"];
+  }
+  const lines: string[] = [];
+  for (const [index, hit] of hits.entries()) {
+    if (index > 0) {
+      lines.push("");
+    }
+    lines.push(`${hit.score.toFixed(3)}  ${hit.citation}`);
+    lines.push(hit.content);
+  }
+  return lines;
 }
 
 function readConfig(
@@ -132,6 +216,50 @@ async function runSetup(
   return 0;
 }
 
+async function queryIndex(
+  config: IndexerConfig,
+  flags: QueryFlags,
+): Promise<SearchHit[]> {
+  const embedder = new AzureEmbedder({
+    endpoint: config.AZURE_OPENAI_ENDPOINT,
+    apiKey: config.AZURE_OPENAI_API_KEY,
+    deployment: config.AZURE_OPENAI_EMBEDDING_DEPLOYMENT,
+    dimensions: config.EMBEDDING_DIMENSIONS,
+  });
+  const index = createAzureSearchIndex({
+    endpoint: config.AZURE_SEARCH_ENDPOINT,
+    apiKey: config.AZURE_SEARCH_API_KEY,
+    indexName: config.AZURE_SEARCH_INDEX,
+    embedder,
+  });
+  return retrieve(index, {
+    query: flags.query,
+    topK: flags.topK,
+    ...(flags.tags.length === 0 ? {} : { tags: flags.tags }),
+    ...(flags.notePath === undefined ? {} : { notePath: flags.notePath }),
+  });
+}
+
+async function runQueryCommand(
+  config: IndexerConfig,
+  flags: QueryFlags,
+  options: RunCliOptions,
+): Promise<number> {
+  try {
+    const hits = await (options.runQuery ?? queryIndex)(config, flags);
+    for (const line of formatHits(hits)) {
+      options.io.log(line);
+    }
+    return 0;
+  } catch (error) {
+    if (error instanceof RetrievalError) {
+      options.io.error(error.message);
+      return 1;
+    }
+    throw error;
+  }
+}
+
 async function runIndexCommand(
   config: IndexerConfig,
   flags: IndexFlags,
@@ -158,18 +286,30 @@ export async function runCli(
   options: RunCliOptions,
 ): Promise<number> {
   const command = argv[2];
-  if (command !== "index:setup" && command !== "index") {
+  if (command !== "index:setup" && command !== "index" && command !== "query") {
     options.io.error(usage());
     return 1;
   }
 
-  let flags: IndexFlags | undefined;
+  let indexFlags: IndexFlags | undefined;
+  let queryFlags: QueryFlags | undefined;
   if (command === "index") {
-    flags = parseIndexFlags(argv.slice(3));
-    if (flags === undefined) {
+    indexFlags = parseIndexFlags(argv.slice(3));
+    if (indexFlags === undefined) {
       options.io.error(usage());
       return 1;
     }
+  } else if (command === "query") {
+    const parsedQuery = parseQueryArgs(argv.slice(3));
+    if (!parsedQuery.ok) {
+      options.io.error(
+        parsedQuery.reason === "short"
+          ? "Query must be at least 3 characters."
+          : usage(),
+      );
+      return 1;
+    }
+    queryFlags = parsedQuery.flags;
   }
 
   const parsed = readConfig(options);
@@ -177,8 +317,11 @@ export async function runCli(
     return 1;
   }
 
-  if (flags === undefined) {
+  if (command === "query" && queryFlags !== undefined) {
+    return runQueryCommand(parsed.config, queryFlags, options);
+  }
+  if (indexFlags === undefined) {
     return runSetup(parsed.config, options);
   }
-  return runIndexCommand(parsed.config, flags, options);
+  return runIndexCommand(parsed.config, indexFlags, options);
 }

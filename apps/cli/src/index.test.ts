@@ -1,7 +1,18 @@
 import { devlogChunksIndex, type DevlogIndexClient } from "@devlog/adapters";
-import { IndexError, type IndexReport } from "@devlog/core";
+import {
+  IndexError,
+  RetrievalError,
+  type IndexReport,
+  type SearchHit,
+} from "@devlog/core";
 import { expect, test } from "vitest";
-import { packageName, runCli, type CliIO, type IndexFlags } from "./index.js";
+import {
+  packageName,
+  runCli,
+  type CliIO,
+  type IndexFlags,
+  type QueryFlags,
+} from "./index.js";
 
 type IndexDefinition = ReturnType<typeof devlogChunksIndex>;
 
@@ -102,7 +113,7 @@ test("an unknown command prints usage and does not open the index", async () => 
   const output = io();
   let opened = 0;
 
-  const code = await runCli(["node", "main.ts", "query"], {
+  const code = await runCli(["node", "main.ts", "eval"], {
     env: indexerEnv(),
     io: output,
     openIndex: () => {
@@ -114,6 +125,7 @@ test("an unknown command prints usage and does not open the index", async () => 
   expect(code).toBe(1);
   expect(opened).toBe(0);
   expect(output.errors.join("\n")).toContain("index:setup");
+  expect(output.errors.join("\n")).toContain("pnpm cli query");
   expect(output.logs).toEqual([]);
 });
 
@@ -313,6 +325,244 @@ test("index names a missing vault path and does not run", async () => {
     runIndex: async () => {
       called += 1;
       return indexReport();
+    },
+  });
+
+  expect(code).toBe(1);
+  expect(called).toBe(0);
+  expect(output.logs).toEqual([]);
+  expect(output.errors.join("\n")).toContain("VAULT_PATH");
+  expect(output.errors.join("\n")).not.toContain(searchKey);
+});
+
+function searchHit(overrides: Partial<SearchHit> = {}): SearchHit {
+  return {
+    chunkId: "chunk-a",
+    notePath: "devlog-agent/Architecture.md",
+    noteTitle: "Architecture",
+    headingPath: ["Background Processing", "Queue Worker"],
+    content: "The queue worker retries failed batches.",
+    score: 0.016,
+    citation: "Architecture.md > Background Processing > Queue Worker",
+    ...overrides,
+  };
+}
+
+test("query prints citations, scores, and chunk text", async () => {
+  const output = io();
+  let opened = 0;
+  let indexed = 0;
+
+  const code = await runCli(["node", "main.ts", "query", "queue worker"], {
+    env: indexerEnv(),
+    io: output,
+    openIndex: () => {
+      opened += 1;
+      return fakeIndex();
+    },
+    runIndex: async () => {
+      indexed += 1;
+      return indexReport();
+    },
+    runQuery: async () => [
+      searchHit(),
+      searchHit({
+        chunkId: "chunk-d",
+        notePath: "devlog-agent/Decisions.md",
+        content: "Keep the notes in blob storage.",
+        score: 1,
+        citation: "Decisions.md > Storage",
+      }),
+    ],
+  });
+
+  expect(code).toBe(0);
+  expect(opened).toBe(0);
+  expect(indexed).toBe(0);
+  expect(output.errors).toEqual([]);
+  expect(output.logs).toEqual([
+    "0.016  Architecture.md > Background Processing > Queue Worker",
+    "The queue worker retries failed batches.",
+    "",
+    "1.000  Decisions.md > Storage",
+    "Keep the notes in blob storage.",
+  ]);
+  expect(output.logs.join("\n")).not.toContain(searchKey);
+});
+
+test("query prints 0 hits when nothing matches", async () => {
+  const output = io();
+
+  const code = await runCli(["node", "main.ts", "query", "queue worker"], {
+    env: indexerEnv(),
+    io: output,
+    runQuery: async () => [],
+  });
+
+  expect(code).toBe(0);
+  expect(output.logs).toEqual(["0 hits"]);
+});
+
+test("query forwards --top, --tag, and --note in either order", async () => {
+  const cases: Array<{ args: string[]; flags: QueryFlags }> = [
+    {
+      args: [
+        "queue worker",
+        "--top",
+        "3",
+        "--tag",
+        "worker",
+        "--note",
+        "devlog-agent/Architecture.md",
+      ],
+      flags: {
+        query: "queue worker",
+        topK: 3,
+        tags: ["worker"],
+        notePath: "devlog-agent/Architecture.md",
+      },
+    },
+    {
+      args: [
+        "--note",
+        "devlog-agent/Architecture.md",
+        "--tag",
+        "worker",
+        "--top",
+        "3",
+        "queue worker",
+      ],
+      flags: {
+        query: "queue worker",
+        topK: 3,
+        tags: ["worker"],
+        notePath: "devlog-agent/Architecture.md",
+      },
+    },
+    {
+      args: ["--tag", "a", "queue worker", "--tag", "b"],
+      flags: {
+        query: "queue worker",
+        topK: 5,
+        tags: ["a", "b"],
+      },
+    },
+  ];
+
+  for (const item of cases) {
+    const output = io();
+    let seen: QueryFlags | undefined;
+    const code = await runCli(["node", "main.ts", "query", ...item.args], {
+      env: indexerEnv(),
+      io: output,
+      runQuery: async (_config, flags) => {
+        seen = flags;
+        return [searchHit()];
+      },
+    });
+
+    expect(code).toBe(0);
+    expect(seen).toEqual(item.flags);
+  }
+});
+
+test("an unknown query flag prints usage and does not search", async () => {
+  const output = io();
+  let called = 0;
+
+  const code = await runCli(["node", "main.ts", "query", "--bogus"], {
+    env: indexerEnv(),
+    io: output,
+    runQuery: async () => {
+      called += 1;
+      return [];
+    },
+  });
+
+  expect(code).toBe(1);
+  expect(called).toBe(0);
+  expect(output.logs).toEqual([]);
+  expect(output.errors.join("\n")).toContain("pnpm cli query");
+});
+
+test("a missing query prints usage and does not search", async () => {
+  const output = io();
+  let called = 0;
+
+  const code = await runCli(["node", "main.ts", "query"], {
+    env: indexerEnv(),
+    io: output,
+    runQuery: async () => {
+      called += 1;
+      return [];
+    },
+  });
+
+  expect(code).toBe(1);
+  expect(called).toBe(0);
+  expect(output.errors.join("\n")).toContain("pnpm cli query");
+});
+
+test("a short query exits 1 and does not search", async () => {
+  const output = io();
+  let called = 0;
+
+  const code = await runCli(["node", "main.ts", "query", "no"], {
+    env: indexerEnv(),
+    io: output,
+    runQuery: async () => {
+      called += 1;
+      return [];
+    },
+  });
+
+  expect(code).toBe(1);
+  expect(called).toBe(0);
+  expect(output.logs).toEqual([]);
+  expect(output.errors).toEqual(["Query must be at least 3 characters."]);
+});
+
+test("a retrieval error exits 1 and hides the search key", async () => {
+  const output = io();
+
+  const code = await runCli(["node", "main.ts", "query", "queue worker"], {
+    env: indexerEnv(),
+    io: output,
+    runQuery: async () => {
+      throw new RetrievalError("Invalid search query.");
+    },
+  });
+
+  expect(code).toBe(1);
+  expect(output.logs).toEqual([]);
+  expect(output.errors).toEqual(["Invalid search query."]);
+  expect(output.errors.join("\n")).not.toContain(searchKey);
+});
+
+test("query rethrows errors that are not a retrieval error", async () => {
+  await expect(
+    runCli(["node", "main.ts", "query", "queue worker"], {
+      env: indexerEnv(),
+      io: io(),
+      runQuery: async () => {
+        throw new Error("boom");
+      },
+    }),
+  ).rejects.toThrow("boom");
+});
+
+test("query names a missing vault path and does not search", async () => {
+  const output = io();
+  const env = indexerEnv();
+  delete env.VAULT_PATH;
+  let called = 0;
+
+  const code = await runCli(["node", "main.ts", "query", "queue worker"], {
+    env,
+    io: output,
+    runQuery: async () => {
+      called += 1;
+      return [];
     },
   });
 

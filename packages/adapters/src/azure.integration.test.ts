@@ -147,6 +147,26 @@ describe.skipIf(!azureEnabled)("Azure adapters", () => {
         content,
         citation: "__adapter_smoke__.md > Smoke",
       });
+
+      const samples: number[] = [];
+      while (samples.length < 20) {
+        const started = Date.now();
+        await search.hybridSearch({
+          query: MARKER,
+          topK: 5,
+          tags: ["smoke"],
+          notePath: NOTE_PATH,
+        });
+        samples.push(Date.now() - started);
+      }
+      samples.sort((left, right) => left - right);
+      const p95 = samples[Math.ceil(0.95 * samples.length) - 1];
+      if (p95 === undefined) {
+        throw new Error("p95 sample is missing");
+      }
+      expect(p95, `p95 ${String(p95)} ms [${samples.join(", ")}]`).toBeLessThan(
+        1500,
+      );
     } catch (error) {
       failure = error;
     }
@@ -173,5 +193,5 @@ describe.skipIf(!azureEnabled)("Azure adapters", () => {
     if (cleanup.length > 0) {
       throw new Error(cleanup.join("; "));
     }
-  }, 120_000);
+  }, 180_000);
 });

@@ -17,6 +17,7 @@ export {
   type IndexReport,
 } from "./ingestion/index-vault.js";
 export { walkVault, type VaultNote } from "./ingestion/walk.js";
+export { RetrievalError, retrieve } from "./retrieval/search.js";
 export {
   parseNote,
   ParsedBlockSchema,
