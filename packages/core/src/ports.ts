@@ -11,11 +11,19 @@ export interface EmbeddingStamp {
   embeddingDimensions: number;
 }
 
+export interface NoteSummary {
+  notePath: string;
+  noteTitle: string;
+  tags: string[];
+  indexedAt: string;
+}
+
 export interface SearchIndex {
   upsert(chunks: IndexedChunk[]): Promise<void>;
   deleteByNotePath(notePath: string): Promise<void>;
   hybridSearch(q: SearchQuery): Promise<SearchHit[]>;
   listNoteHashes(): Promise<Map<string, string>>;
+  listNotes(): Promise<NoteSummary[]>;
   readEmbeddingStamp(): Promise<EmbeddingStamp | null>;
 }
 

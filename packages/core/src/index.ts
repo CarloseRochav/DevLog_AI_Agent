@@ -7,6 +7,7 @@ export type {
   Embedder,
   EmbeddingStamp,
   NoteStore,
+  NoteSummary,
   SearchIndex,
 } from "./ports.js";
 export { chunkNote, type ChunkOptions } from "./ingestion/chunk.js";

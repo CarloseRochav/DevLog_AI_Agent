@@ -45,6 +45,10 @@ class RecordingIndex implements SearchIndex {
     return new Map();
   }
 
+  async listNotes() {
+    return [];
+  }
+
   async readEmbeddingStamp(): Promise<null> {
     return null;
   }

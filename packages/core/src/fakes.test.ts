@@ -128,6 +128,47 @@ test("hybridSearch matches content and honors topK, notePath, and tags", async (
   expect(byTag.map((hit) => hit.chunkId)).toEqual(["a", "b", "d"]);
 });
 
+test("InMemorySearchIndex listNotes dedupes by notePath", async () => {
+  const index = new InMemorySearchIndex();
+  await index.upsert([
+    chunk({
+      id: "new",
+      tags: ["worker"],
+      indexedAt: "2026-06-01T00:00:00.000Z",
+    }),
+    chunk({
+      id: "old",
+      ordinal: 1,
+      tags: ["stale"],
+      indexedAt: "2026-01-01T00:00:00.000Z",
+    }),
+    chunk({
+      id: "decisions",
+      notePath: "ProjectX/Decisions.md",
+      noteTitle: "Decisions",
+      headingPath: ["Storage"],
+      tags: ["storage"],
+      contentHash: "hash-decisions",
+      indexedAt: "2026-02-01T00:00:00.000Z",
+    }),
+  ]);
+
+  expect(await index.listNotes()).toEqual([
+    {
+      notePath: "ProjectX/Architecture.md",
+      noteTitle: "Architecture",
+      tags: ["worker"],
+      indexedAt: "2026-06-01T00:00:00.000Z",
+    },
+    {
+      notePath: "ProjectX/Decisions.md",
+      noteTitle: "Decisions",
+      tags: ["storage"],
+      indexedAt: "2026-02-01T00:00:00.000Z",
+    },
+  ]);
+});
+
 test("put, get, and delete notes", async () => {
   const store = new InMemoryNoteStore();
 

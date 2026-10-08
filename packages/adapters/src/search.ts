@@ -4,6 +4,7 @@ import {
   type Embedder,
   type EmbeddingStamp,
   type IndexedChunk,
+  type NoteSummary,
   type SearchHit,
   type SearchIndex as SearchIndexPort,
   type SearchQuery,
@@ -109,6 +110,53 @@ function fileName(notePath: string): string {
     return notePath;
   }
   return last;
+}
+
+function indexedAtIso(value: unknown): string | null {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString();
+  }
+  if (typeof value !== "string") {
+    return null;
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  return parsed.toISOString();
+}
+
+function stringList(value: unknown): string[] | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+  const items: string[] = [];
+  for (const item of value) {
+    if (typeof item !== "string") {
+      return null;
+    }
+    items.push(item);
+  }
+  return items;
+}
+
+function noteSummaryFromDocument(
+  document: Record<string, unknown>,
+): NoteSummary | null {
+  const notePath = document.notePath;
+  const noteTitle = document.noteTitle;
+  const tags = stringList(document.tags);
+  const indexedAt = indexedAtIso(document.indexedAt);
+  if (
+    typeof notePath !== "string" ||
+    notePath === "" ||
+    typeof noteTitle !== "string" ||
+    tags === null ||
+    indexedAt === null
+  ) {
+    return null;
+  }
+  return { notePath, noteTitle, tags, indexedAt };
 }
 
 function headingPathFromField(value: unknown): unknown {
@@ -390,6 +438,34 @@ export class AzureSearchIndex implements SearchIndexPort {
       );
     }
     return { embeddingModel, embeddingDimensions };
+  }
+
+  async listNotes(): Promise<NoteSummary[]> {
+    const notes = new Map<string, NoteSummary>();
+    await this.eachPage(
+      {
+        searchText: "*",
+        select: ["notePath", "noteTitle", "tags", "indexedAt"],
+      },
+      (hits) => {
+        for (const hit of hits) {
+          const summary = noteSummaryFromDocument(hit.document);
+          if (summary === null) {
+            continue;
+          }
+          const existing = notes.get(summary.notePath);
+          if (
+            existing === undefined ||
+            summary.indexedAt > existing.indexedAt
+          ) {
+            notes.set(summary.notePath, summary);
+          }
+        }
+      },
+    );
+    return [...notes.values()].sort((left, right) =>
+      left.notePath.localeCompare(right.notePath),
+    );
   }
 
   async listNoteHashes(): Promise<Map<string, string>> {

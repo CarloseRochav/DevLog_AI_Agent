@@ -89,6 +89,7 @@ function harness(): {
     },
     hybridSearch: (query) => search.hybridSearch(query),
     listNoteHashes: () => search.listNoteHashes(),
+    listNotes: () => search.listNotes(),
     readEmbeddingStamp: () => search.readEmbeddingStamp(),
   };
   return {

@@ -420,6 +420,65 @@ test("deleteByNotePath pages ids and skips a delete when none match", async () =
   expect(documents.deleted).toEqual([]);
 });
 
+test("AzureSearchIndex listNotes searches star and dedupes notePath", async () => {
+  const { index, documents } = indexWith();
+  documents.searchHandler = () => [
+    {
+      document: {
+        notePath: "devlog-agent/Queue Worker.md",
+        noteTitle: "Queue Worker",
+        tags: ["stale"],
+        indexedAt: "2026-01-01T00:00:00.000Z",
+      },
+    },
+    {
+      document: {
+        notePath: "devlog-agent/Queue Worker.md",
+        noteTitle: "Queue Worker",
+        tags: ["worker", "retry"],
+        indexedAt: new Date("2026-06-01T00:00:00.000Z"),
+      },
+    },
+    {
+      document: {
+        notePath: "devlog-agent/Decisions.md",
+        noteTitle: "Decisions",
+        tags: ["storage"],
+        indexedAt: "2026-03-01T00:00:00.000Z",
+      },
+    },
+    {
+      document: {
+        notePath: "devlog-agent/Broken.md",
+        noteTitle: "Broken",
+      },
+    },
+  ];
+
+  const notes = await index.listNotes();
+
+  expect(documents.searches[0]).toMatchObject({
+    searchText: "*",
+    top: 1000,
+    skip: 0,
+    select: ["notePath", "noteTitle", "tags", "indexedAt"],
+  });
+  expect(notes).toEqual([
+    {
+      notePath: "devlog-agent/Decisions.md",
+      noteTitle: "Decisions",
+      tags: ["storage"],
+      indexedAt: "2026-03-01T00:00:00.000Z",
+    },
+    {
+      notePath: "devlog-agent/Queue Worker.md",
+      noteTitle: "Queue Worker",
+      tags: ["worker", "retry"],
+      indexedAt: "2026-06-01T00:00:00.000Z",
+    },
+  ]);
+});
+
 test("listNoteHashes keeps the first hash for each note", async () => {
   const { index, documents } = indexWith();
   documents.searchHandler = (request) => {

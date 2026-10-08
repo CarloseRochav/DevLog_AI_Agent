@@ -2,6 +2,7 @@ import type {
   Embedder,
   EmbeddingStamp,
   NoteStore,
+  NoteSummary,
   SearchIndex,
 } from "./ports.js";
 import type { IndexedChunk, SearchHit, SearchQuery } from "./schemas.js";
@@ -83,6 +84,25 @@ export class InMemorySearchIndex implements SearchIndex {
       hashes.set(chunk.notePath, chunk.contentHash);
     }
     return hashes;
+  }
+
+  async listNotes(): Promise<NoteSummary[]> {
+    const notes = new Map<string, NoteSummary>();
+    for (const chunk of this.chunks.values()) {
+      const summary: NoteSummary = {
+        notePath: chunk.notePath,
+        noteTitle: chunk.noteTitle,
+        tags: [...chunk.tags],
+        indexedAt: chunk.indexedAt,
+      };
+      const existing = notes.get(chunk.notePath);
+      if (existing === undefined || summary.indexedAt > existing.indexedAt) {
+        notes.set(chunk.notePath, summary);
+      }
+    }
+    return [...notes.values()].sort((left, right) =>
+      left.notePath.localeCompare(right.notePath),
+    );
   }
 
   async readEmbeddingStamp(): Promise<EmbeddingStamp | null> {
