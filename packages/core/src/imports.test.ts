@@ -21,6 +21,8 @@ function restricted(result: {
   );
 }
 
+// The first ESLint run loads the flat config and can pass 5s while the
+// rest of the suite is running.
 test("blocks @azure imports in core", async () => {
   const result = await lint(
     "packages/core/src/forbidden-azure.ts",
@@ -29,7 +31,7 @@ test("blocks @azure imports in core", async () => {
 
   expect(result.errorCount).toBeGreaterThan(0);
   expect(restricted(result)).toBe(true);
-});
+}, 20_000);
 
 test("blocks langchain imports in core", async () => {
   const result = await lint(

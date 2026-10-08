@@ -94,7 +94,28 @@ The container is private. `scripts/smoke-azure.ts` writes `smoke.txt` and then d
 
 New resources for this task go in eastus2. The storage account is in eastus2. The Foundry account stays in westus3 and the free search service stays in centralus, because both already existed in `rg-ernes-102010-6283`.
 
+## Container Apps (T2.5)
+
+Created in eastus2. The workflow is `docs/deploy.md`. The public host name is assigned by Azure.
+
+| | |
+| --- | --- |
+| Registry | crdevlogagent |
+| Login server | crdevlogagent.azurecr.io |
+| Registry SKU | Basic, admin user enabled |
+| Image | devlog-agent:20261008204302 |
+| Log Analytics | log-devlog-agent |
+| Workspace customer id | 28be5cc9-ae8c-47ab-94aa-9e81b95f6854 |
+| Environment | cae-devlog-agent |
+| Container App | ca-devlog-agent |
+| Public URL | https://ca-devlog-agent.victoriouspebble-bfc7fd71.eastus2.azurecontainerapps.io |
+| Ingress | external, target port 3000, transport Http |
+| Scale | min replicas 0, max replicas 1 |
+| Size | 0.5 CPU, 1Gi memory |
+
+Keys are Container Apps secrets referenced as environment variables. They are not listed here. The Log Analytics shared key is not listed here either. The workspace customer id is an identifier, not a secret.
+
 ## Later tasks
 
-- T1.4 creates the `devlog-chunks` search index.
-- T2.5 deploys the Container App.
+- T1.4 created the `devlog-chunks` search index.
+- T2.5 deployed the Container App. The record is above and in `docs/deploy.md`.

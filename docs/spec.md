@@ -522,7 +522,7 @@ Sixteen tasks across three phases; each is sized for one working session and is 
   - `--dry-run` writes nothing; a changed `EMBEDDING_DIMENSIONS` refuses to run without `--full`.
 - [x] **T1.6 Retrieval service + `query` command** \[FR-RET-01, 02, 03, NFR-PERF-01\].
   - `pnpm cli query "..."` prints citations and scores; tag filter narrows results; p95 under 1.5 s over 20 runs.
-- [ ] **T1.7 Golden set + `eval` command** \[FR-EVAL-01, NFR-QA-01\].
+- [x] **T1.7 Golden set + `eval` command** \[FR-EVAL-01, NFR-QA-01\].
   - 15 questions per section 9.1; report shows hit@5 ≥ 0.8 (tune chunking and threshold until it does).
 
 ### Phase 2: Agent and chat API
@@ -532,12 +532,13 @@ Sixteen tasks across three phases; each is sized for one working session and is 
 - [x] **T2.2 Agent package** \[FR-AGT-01, FR-AGT-02\].
   - `createDevlogAgent()` per section 8.3; a test with a fake model verifies the tool wiring.
   - Manual check: 5 golden questions answered with citations; 2 negative questions answered starting with exactly "The notes don't cover this.".
-- [ ] **T2.3 Server: auth, health, logging** \[NFR-SEC-01, NFR-OBS-01\].
+- [x] **T2.3 Server: auth, health, logging** \[NFR-SEC-01, NFR-OBS-01\].
   - Missing or wrong `x-api-key` returns 401; logs show request ID, latency, tool calls, token usage.
-- [ ] **T2.4 `POST /chat` with SSE** \[FR-API-01, FR-API-02\].
+  - `GET /health` does not require the API key. It returns 200 when the search index exists and 503 when it does not.
+- [x] **T2.4 `POST /chat` with SSE** \[FR-API-01, FR-API-02\].
   - Events match section 8.5; a second message with the same `conversationId` sees the first; `DELETE` resets it.
   - A minimal test client (`curl -N` script or small HTML page) shows tokens streaming.
-- [ ] **T2.5 Deploy to Container Apps.** Dockerfile (multi-stage, Node 22 slim), secrets as env vars, min replicas 0.
+- [x] **T2.5 Deploy to Container Apps.** Dockerfile (multi-stage, Node 22 slim), secrets as env vars, min replicas 0.
   - `/health` returns 200 from the public URL; `/chat` works from the test client.
 
 ## 11. Risks, open decisions and future phases

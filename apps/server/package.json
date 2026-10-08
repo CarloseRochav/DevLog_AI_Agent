@@ -11,5 +11,19 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@devlog/adapters": "workspace:*",
+    "@devlog/agent": "workspace:*",
+    "@devlog/config": "workspace:*",
+    "express": "^5.2.1",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@devlog/core": "workspace:*",
+    "@langchain/core": "1.2.17",
+    "@types/express": "^5.0.6",
+    "@types/node": "catalog:",
+    "langchain": "1.5.15"
   }
 }
