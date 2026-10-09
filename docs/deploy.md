@@ -226,15 +226,17 @@ The container never reindexes. After notes change, run the indexer locally (`pnp
 
 ## Recorded deployment
 
-First successful run, 8 Oct 2026. The image was built by `az acr build` run `ch1`. The local CLI log streamer then crashed on a pnpm checkmark (cp1252). The remote build still finished as Succeeded. The app was created with `-ImageTag 20261008204302`, which skips a second build. Later deploys can use `pnpm azure:deploy`; the script now sets `PYTHONUTF8=1` so the streamer survives that character.
+First successful run, 8 Oct 2026. The image was built by `az acr build` run `ch1`. The local CLI log streamer then crashed on a pnpm checkmark (cp1252). The remote build still finished as Succeeded. The app was created with `-ImageTag 20261008204302`, which skips a second build. Later deploys can use `pnpm azure:deploy`; the script now sets `PYTHONUTF8=1` so the streamer survives that character. That setting does not reach the streamer: `Invoke-Az` runs `python.exe -I`, and isolated mode ignores `PYTHONUTF8`.
+
+Phase 2 close-out, 9 Oct 2026. `pnpm azure:deploy` queued `devlog-agent:20261009015009` as ACR run `ch3`. The local streamer crashed on the same checkmark. The remote build succeeded, and the app was updated with `-ImageTag 20261009015009`. `GET /health` returned 200. The first-run image was `devlog-agent:20261008204302`. The table below is the current image.
 
 Creating `cae-devlog-agent` stayed in provisioning state `Waiting` for many minutes, then `Succeeded`. That wait is normal for a new environment.
 
 | | |
 | --- | --- |
-| Image | crdevlogagent.azurecr.io/devlog-agent:20261008204302 |
+| Image | crdevlogagent.azurecr.io/devlog-agent:20261009015009 |
 | Public URL | https://ca-devlog-agent.victoriouspebble-bfc7fd71.eastus2.azurecontainerapps.io |
 | Health | `GET /health` returned `200` and `{"status":"ok"}` |
-| Chat | `scripts/chat.ps1` against that URL, message "Where is sp_ProcessBatch called?", conversation `efde47b7-b7b3-4c35-8e62-0f294b103276`. The stream sent `token`, `tool_start`, `tool_end`, `sources`, and `done`. Usage was 4432 input tokens and 165 output tokens. Latency was 12800 ms. The answer cited `Queue Worker.md > Queue Worker > Procedure Call`. |
+| Chat | First run on image `20261008204302`, conversation `efde47b7-b7b3-4c35-8e62-0f294b103276`. The stream sent `token`, `tool_start`, `tool_end`, `sources`, and `done`. Usage was 4432 input tokens and 165 output tokens. Latency was 12800 ms. The answer cited `Queue Worker.md > Queue Worker > Procedure Call`. |
 
 Live settings read back from Azure: external ingress, target port 3000, transport `Http`, CPU 0.5, memory 1Gi, min replicas 0, max replicas 1. Secret names on the app are `acr-password`, `azure-openai-api-key`, `azure-search-api-key`, `azure-storage-connection-string`, and `agent-api-key`. The four application keys are `secretRef` environment variables. `VAULT_PATH` is not set.

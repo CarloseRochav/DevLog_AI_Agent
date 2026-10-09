@@ -103,7 +103,7 @@ Created in eastus2. The workflow is `docs/deploy.md`. The public host name is as
 | Registry | crdevlogagent |
 | Login server | crdevlogagent.azurecr.io |
 | Registry SKU | Basic, admin user enabled |
-| Image | devlog-agent:20261008204302 |
+| Image | devlog-agent:20261009015009 |
 | Log Analytics | log-devlog-agent |
 | Workspace customer id | 28be5cc9-ae8c-47ab-94aa-9e81b95f6854 |
 | Environment | cae-devlog-agent |
