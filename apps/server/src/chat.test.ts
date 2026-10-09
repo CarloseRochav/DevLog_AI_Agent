@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import type { Server } from "node:http";
 import { request as httpRequest, type IncomingMessage } from "node:http";
 import type { Readable } from "node:stream";
@@ -228,6 +228,12 @@ async function readRest(stream: Readable): Promise<string> {
     parts.push(typeof chunk === "string" ? chunk : String(chunk));
   }
   return parts.join("");
+}
+
+function pwshOnPath(): boolean {
+  const command = process.platform === "win32" ? "where.exe" : "which";
+  const result = spawnSync(command, ["pwsh"], { stdio: "ignore" });
+  return result.status === 0;
 }
 
 function runChatScript(
@@ -501,24 +507,27 @@ test("tokens are written before the rest of the turn", async () => {
   });
 }, 8_000);
 
-test("scripts/chat.ps1 prints the event stream", async () => {
-  const chat: ChatSession = {
-    agent: {
-      async stream() {
-        return (async function* () {
-          yield tokenChunk("Hello from curl", "curl");
-        })();
+test.skipIf(!pwshOnPath())(
+  "scripts/chat.ps1 prints the event stream",
+  async () => {
+    const chat: ChatSession = {
+      agent: {
+        async stream() {
+          return (async function* () {
+            yield tokenChunk("Hello from curl", "curl");
+          })();
+        },
       },
-    },
-  };
+    };
 
-  await withChat(chat, async (baseUrl) => {
-    const stdout = await runChatScript(baseUrl, "hello", conversationA);
-    expect(stdout).toContain("event: token");
-    expect(stdout).toContain("Hello from curl");
-    expect(stdout).toContain("event: done");
-  });
-});
+    await withChat(chat, async (baseUrl) => {
+      const stdout = await runChatScript(baseUrl, "hello", conversationA);
+      expect(stdout).toContain("event: token");
+      expect(stdout).toContain("Hello from curl");
+      expect(stdout).toContain("event: done");
+    });
+  },
+);
 
 test("a failed turn streams an error event", async () => {
   const chat: ChatSession = {
