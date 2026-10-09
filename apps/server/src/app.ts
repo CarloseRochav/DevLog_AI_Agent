@@ -5,6 +5,7 @@ import express, {
   type Response,
 } from "express";
 import { requireApiKey } from "./auth.js";
+import { CORS_ORIGIN_PLACEHOLDER, createCorsMiddleware } from "./cors.js";
 import {
   createChatDeleteHandler,
   createChatPostHandler,
@@ -25,6 +26,7 @@ export interface CreateAppOptions {
   indexExists: () => Promise<boolean>;
   log?: (line: string) => void;
   chat?: ChatSession;
+  corsOrigin?: string;
 }
 
 export function createApp(options: CreateAppOptions): Express {
@@ -40,6 +42,12 @@ export function mountServer(app: Express, options: CreateAppOptions): void {
   app.set("strict routing", true);
   app.set("case sensitive routing", true);
   app.use(requestLogger(log));
+  if (
+    options.corsOrigin !== undefined &&
+    options.corsOrigin !== CORS_ORIGIN_PLACEHOLDER
+  ) {
+    app.use(createCorsMiddleware(options.corsOrigin));
+  }
   app.use(requireApiKey(options.apiKey));
   app.get("/health", createHealthHandler(options.indexExists, log));
   if (options.chat !== undefined) {

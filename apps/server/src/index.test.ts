@@ -66,6 +66,7 @@ async function stop(server: Server): Promise<void> {
 async function withServer(
   indexExistsCheck: () => Promise<boolean>,
   run: (baseUrl: string, lines: string[]) => Promise<void>,
+  corsOrigin?: string,
 ): Promise<void> {
   const output = collect();
   const running = await startServer({
@@ -74,6 +75,7 @@ async function withServer(
     log: output.log,
     port: 0,
     host: "127.0.0.1",
+    ...(corsOrigin === undefined ? {} : { corsOrigin }),
   });
   try {
     await run(`http://127.0.0.1:${running.port}`, output.lines);
@@ -347,6 +349,92 @@ test("an unexpected error returns 500 without the internal message", async () =>
   } finally {
     await stop(running.server);
   }
+});
+
+test("CORS stays off when the origin is omitted or still the placeholder", async () => {
+  const allowed = "https://app.example";
+  const check = async (baseUrl: string): Promise<void> => {
+    const health = await fetch(`${baseUrl}/health`, {
+      headers: { origin: allowed },
+    });
+    expect(health.headers.get("access-control-allow-origin")).toBeNull();
+    const preflight = await fetch(`${baseUrl}/chat`, { method: "OPTIONS" });
+    expect(preflight.status).toBe(401);
+  };
+
+  await withServer(
+    async () => true,
+    async (baseUrl) => {
+      await check(baseUrl);
+    },
+  );
+  await withServer(
+    async () => true,
+    async (baseUrl) => {
+      await check(baseUrl);
+    },
+    "<FRONTEND_ORIGIN_PLACEHOLDER>",
+  );
+});
+
+test("CORS allows only CORS_ORIGIN and lets preflight skip auth", async () => {
+  const allowed = "https://app.example";
+  await withServer(
+    async () => true,
+    async (baseUrl) => {
+      const health = await fetch(`${baseUrl}/health`, {
+        headers: { origin: allowed },
+      });
+      expect(health.status).toBe(200);
+      expect(health.headers.get("access-control-allow-origin")).toBe(allowed);
+      expect(health.headers.get("access-control-expose-headers")).toBe(
+        "x-request-id",
+      );
+      expect(health.headers.get("vary")).toBe("Origin");
+
+      const other = await fetch(`${baseUrl}/health`, {
+        headers: { origin: "https://evil.example" },
+      });
+      expect(other.headers.get("access-control-allow-origin")).toBeNull();
+      expect(other.headers.get("access-control-expose-headers")).toBeNull();
+
+      const preflight = await fetch(`${baseUrl}/chat`, {
+        method: "OPTIONS",
+        headers: { origin: allowed },
+      });
+      expect(preflight.status).toBe(204);
+      expect(await preflight.text()).toBe("");
+      expect(preflight.headers.get("access-control-allow-origin")).toBe(
+        allowed,
+      );
+      expect(preflight.headers.get("access-control-allow-methods")).toBe(
+        "GET, HEAD, POST, DELETE, OPTIONS",
+      );
+      expect(preflight.headers.get("access-control-allow-headers")).toBe(
+        "x-api-key, content-type, x-request-id",
+      );
+      expect(preflight.headers.get("access-control-expose-headers")).toBe(
+        "x-request-id",
+      );
+
+      const foreign = await fetch(`${baseUrl}/chat`, {
+        method: "OPTIONS",
+        headers: { origin: "https://evil.example" },
+      });
+      expect(foreign.status).toBe(204);
+      expect(foreign.headers.get("access-control-allow-origin")).toBeNull();
+      expect(foreign.headers.get("access-control-allow-headers")).toBeNull();
+
+      const post = await fetch(`${baseUrl}/chat`, {
+        method: "POST",
+        headers: { origin: allowed, "content-type": "application/json" },
+        body: "{}",
+      });
+      expect(post.status).toBe(401);
+      expect(post.headers.get("access-control-allow-origin")).toBe(allowed);
+    },
+    allowed,
+  );
 });
 
 test("recordFailure stores the code and a bounded message", () => {

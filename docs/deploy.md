@@ -117,7 +117,7 @@ Plain environment variables come from `.env`, with the defaults below when the k
 | CORS_ORIGIN | `.env` or default | `<FRONTEND_ORIGIN_PLACEHOLDER>` when unset |
 | HISTORY_MAX_MESSAGES | `.env` or default | `20` |
 
-`CORS_ORIGIN` is validated and stored. The server does not mount CORS middleware yet. The browser client is Phase 4.
+`CORS_ORIGIN` is enforced when it is not `<FRONTEND_ORIGIN_PLACEHOLDER>`. The placeholder skips CORS. The browser client is still Phase 4.
 
 Secrets are Container Apps secrets. The app sees them as environment variables. The secret names and the variables they fill:
 

@@ -51,6 +51,7 @@ try {
     apiKey: config.AGENT_API_KEY,
     indexExists: () => indexExists(search, config.AZURE_SEARCH_INDEX),
     chat,
+    corsOrigin: config.CORS_ORIGIN,
   });
   console.log(JSON.stringify({ msg: "listening", port: running.port }));
 } catch (error) {
