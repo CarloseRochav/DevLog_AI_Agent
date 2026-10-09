@@ -1,5 +1,5 @@
 import type { Server } from "node:http";
-import express from "express";
+import express, { type Response } from "express";
 import { expect, test } from "vitest";
 import {
   addTokenUsage,
@@ -12,7 +12,12 @@ import {
   startServer,
   type IndexLookup,
 } from "./index.js";
-import { resolveRequestId } from "./observe.js";
+import {
+  beginObservation,
+  readObservation,
+  recordFailure,
+  resolveRequestId,
+} from "./observe.js";
 
 const apiKey = "k".repeat(32);
 
@@ -201,6 +206,8 @@ test("a wrong API key returns 401 and is not logged", async () => {
       expect(requestLogs(lines)[0]).toMatchObject({
         path: "/chat",
         status: 401,
+        outcome: "error",
+        errorCode: "unauthorized",
       });
     },
   );
@@ -340,6 +347,17 @@ test("an unexpected error returns 500 without the internal message", async () =>
   } finally {
     await stop(running.server);
   }
+});
+
+test("recordFailure stores the code and a bounded message", () => {
+  const res = {} as Response;
+  beginObservation(res, "req-1");
+  recordFailure(res, "agent_error", "x".repeat(600));
+  expect(readObservation(res)).toMatchObject({
+    outcome: "error",
+    errorCode: "agent_error",
+    error: "x".repeat(500),
+  });
 });
 
 test("recordToolCall requires an active request", () => {

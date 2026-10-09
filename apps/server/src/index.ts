@@ -50,8 +50,11 @@ export { createChatSession, type ChatSession } from "./chat.js";
 export { indexExists, type IndexLookup } from "./index-exists.js";
 export {
   addTokenUsage,
+  recordFailure,
+  recordOutcome,
   recordToolCall,
   type RequestLogEntry,
+  type RequestOutcome,
   type TokenUsage,
   type ToolCallLog,
 } from "./observe.js";

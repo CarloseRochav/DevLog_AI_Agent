@@ -15,10 +15,15 @@ export interface TokenUsage {
   outputTokens: number;
 }
 
+export type RequestOutcome = "ok" | "error" | "aborted";
+
 export interface Observation {
   requestId: string;
   toolCalls: ToolCallLog[];
   usage: TokenUsage;
+  outcome?: RequestOutcome;
+  errorCode?: string;
+  error?: string;
 }
 
 export interface RequestLogEntry {
@@ -29,6 +34,9 @@ export interface RequestLogEntry {
   path: string;
   status: number;
   latencyMs: number;
+  outcome: RequestOutcome;
+  errorCode?: string;
+  error?: string;
   toolCalls: ToolCallLog[];
   usage: TokenUsage;
 }
@@ -59,6 +67,29 @@ export function readObservation(res: Response): Observation {
     throw new Error("Request observation is missing");
   }
   return observation;
+}
+
+export function recordOutcome(
+  res: Response,
+  outcome: RequestOutcome,
+  errorCode?: string,
+): void {
+  const observation = readObservation(res);
+  observation.outcome = outcome;
+  if (errorCode !== undefined) {
+    observation.errorCode = errorCode;
+  }
+}
+
+export function recordFailure(
+  res: Response,
+  errorCode: string,
+  error: string,
+): void {
+  const observation = readObservation(res);
+  observation.outcome = "error";
+  observation.errorCode = errorCode;
+  observation.error = error.slice(0, 500);
 }
 
 export function recordToolCall(

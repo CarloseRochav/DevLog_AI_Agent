@@ -365,6 +365,7 @@ test("POST /chat streams section 8.5 events and logs the turn", async () => {
         method: "POST",
         path: "/chat",
         status: 200,
+        outcome: "ok",
         toolCalls: [
           {
             tool: "search_architecture_docs",
@@ -374,6 +375,7 @@ test("POST /chat streams section 8.5 events and logs the turn", async () => {
         usage: { inputTokens: 11, outputTokens: 7 },
       }),
     ]);
+    expect(requestLogs(lines)[0]).not.toHaveProperty("error");
     expect(lines.join("\n")).not.toContain(apiKey);
   });
 });
@@ -530,16 +532,98 @@ test("a failed turn streams an error event", async () => {
     },
   };
 
-  await withChat(chat, async (baseUrl) => {
+  await withChat(chat, async (baseUrl, lines) => {
     const response = await postChat(baseUrl, {
       conversationId: conversationA,
       message: "hello",
     });
+    const requestId = response.headers.get("x-request-id");
+    expect(requestId).toMatch(/^[0-9a-f-]{36}$/);
     expect(response.status).toBe(200);
-    expect(parseSse(await response.text())).toEqual([
+    const body = await response.text();
+    expect(body).not.toContain("model down");
+    expect(parseSse(body)).toEqual([
       { event: "token", data: { text: "Partial", messageId: "p" } },
-      { event: "error", data: { code: "agent_error", message: "model down" } },
+      {
+        event: "error",
+        data: {
+          code: "agent_error",
+          message: "The agent failed before it could answer.",
+          requestId,
+        },
+      },
     ]);
+    expect(requestLogs(lines)).toEqual([
+      expect.objectContaining({
+        requestId,
+        path: "/chat",
+        status: 200,
+        outcome: "error",
+        errorCode: "agent_error",
+        error: "model down",
+      }),
+    ]);
+    expect(lines.join("\n")).not.toContain(apiKey);
+  });
+});
+
+test("a dropped chat connection is logged as aborted", async () => {
+  let releaseGate = (): void => {};
+  const gate = new Promise<void>((resolve) => {
+    releaseGate = resolve;
+  });
+  let released = false;
+  const release = (): void => {
+    if (released) {
+      return;
+    }
+    released = true;
+    releaseGate();
+  };
+  const chat: ChatSession = {
+    agent: {
+      async stream() {
+        return (async function* () {
+          yield tokenChunk("Hello", "stream");
+          await gate;
+          yield tokenChunk(" world", "stream");
+        })();
+      },
+    },
+  };
+
+  await withChat(chat, async (baseUrl, lines) => {
+    const incoming = await openPost(baseUrl, {
+      conversationId: conversationA,
+      message: "hello",
+    });
+    try {
+      incoming.setEncoding("utf8");
+      let text = "";
+      const deadline = Date.now() + 3_000;
+      while (!text.includes("Hello")) {
+        if (Date.now() > deadline) {
+          throw new Error(`timed out waiting for the first token: ${text}`);
+        }
+        text += await readChunk(incoming, 3_000);
+      }
+      incoming.destroy();
+      const logDeadline = Date.now() + 2_000;
+      while (
+        !requestLogs(lines).some((entry) => entry.outcome === "aborted") &&
+        Date.now() < logDeadline
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(requestLogs(lines).at(-1)).toMatchObject({
+        path: "/chat",
+        outcome: "aborted",
+      });
+      expect(lines.join("\n")).not.toContain(apiKey);
+    } finally {
+      release();
+      incoming.destroy();
+    }
   });
 });
 

@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
+import { recordOutcome } from "./observe.js";
 
 export function apiKeyMatches(
   provided: string | undefined,
@@ -29,6 +30,7 @@ export function requireApiKey(apiKey: string) {
       return;
     }
     if (!apiKeyMatches(req.get("x-api-key"), apiKey)) {
+      recordOutcome(res, "error", "unauthorized");
       res.status(401).json({
         error: { code: "unauthorized", message: "Unauthorized" },
       });

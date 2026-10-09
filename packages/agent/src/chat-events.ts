@@ -28,12 +28,17 @@ export type ChatEvent =
       event: "done";
       data: { usage: ChatUsage; latencyMs: number };
     }
-  | { event: "error"; data: { code: string; message: string } };
+  | {
+      event: "error";
+      data: { code: string; message: string; requestId?: string };
+    };
 
 export interface ChatEventHooks {
   signal?: AbortSignal;
+  requestId?: string;
   onTool?: (tool: string, input: unknown) => void;
   onUsage?: (usage: ChatUsage) => void;
+  onError?: (error: unknown) => void;
 }
 
 export interface ChatStreamAgent {
@@ -204,9 +209,16 @@ export async function* iterateChatEvents(
     if (options.signal?.aborted) {
       return;
     }
+    options.onError?.(error);
     yield {
       event: "error",
-      data: { code: "agent_error", message: publicErrorMessage(error) },
+      data: {
+        code: "agent_error",
+        message: "The agent failed before it could answer.",
+        ...(options.requestId === undefined
+          ? {}
+          : { requestId: options.requestId }),
+      },
     };
   } finally {
     options.onUsage?.(usage());
@@ -411,11 +423,4 @@ function citedHits(hits: SearchHit[], answer: string): SearchHit[] {
 
 function finite(value: number): number {
   return Number.isFinite(value) ? value : 0;
-}
-
-function publicErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message.trim() !== "") {
-    return error.message.slice(0, 500);
-  }
-  return "The agent failed before it could answer.";
 }

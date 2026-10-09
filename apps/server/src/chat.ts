@@ -8,7 +8,13 @@ import {
   type createDevlogAgent,
 } from "@devlog/agent";
 import { z } from "zod";
-import { addTokenUsage, recordToolCall } from "./observe.js";
+import {
+  addTokenUsage,
+  readObservation,
+  recordFailure,
+  recordOutcome,
+  recordToolCall,
+} from "./observe.js";
 
 export const ChatRequestSchema = z.object({
   conversationId: z.string().uuid(),
@@ -29,16 +35,21 @@ export function createChatPostHandler(session: ChatSession) {
   return async function chatPost(req: Request, res: Response): Promise<void> {
     const parsed = ChatRequestSchema.safeParse(req.body);
     if (!parsed.success) {
+      recordOutcome(res, "error", "invalid_request");
       res.status(400).json({
         error: { code: "invalid_request", message: formatIssues(parsed.error) },
       });
       return;
     }
 
+    const requestId = readObservation(res).requestId;
     const abort = new AbortController();
     const onClose = (): void => {
       if (!res.writableEnded) {
         abort.abort();
+        if (readObservation(res).outcome !== "error") {
+          recordOutcome(res, "aborted");
+        }
       }
     };
     res.on("close", onClose);
@@ -60,11 +71,15 @@ export function createChatPostHandler(session: ChatSession) {
         },
         {
           signal: abort.signal,
+          requestId,
           onTool(tool, input) {
             recordToolCall(res, tool, input);
           },
           onUsage(usage) {
             addTokenUsage(res, usage);
+          },
+          onError(error) {
+            recordFailure(res, "agent_error", failureMessage(error));
           },
         },
       )) {
@@ -75,6 +90,9 @@ export function createChatPostHandler(session: ChatSession) {
       }
     } finally {
       res.off("close", onClose);
+      if (readObservation(res).outcome === undefined) {
+        recordOutcome(res, abort.signal.aborted ? "aborted" : "ok");
+      }
       endQuietly(res);
     }
   };
@@ -91,6 +109,7 @@ export function createChatDeleteHandler(session: ChatSession) {
       .uuid()
       .safeParse(routeParam(req.params.conversationId));
     if (!parsed.success) {
+      recordOutcome(res, "error", "invalid_request");
       res.status(400).json({
         error: { code: "invalid_request", message: formatIssues(parsed.error) },
       });
@@ -127,6 +146,13 @@ function endQuietly(res: Response): void {
   } catch {
     // The client already went away.
   }
+}
+
+function failureMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim() !== "") {
+    return error.message;
+  }
+  return "The agent failed before it could answer.";
 }
 
 function routeParam(value: unknown): string {

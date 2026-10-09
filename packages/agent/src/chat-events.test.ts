@@ -301,7 +301,7 @@ test("a second message sees the first until the conversation is reset", async ()
   expect(thirdCall).not.toContain("answer-alpha");
 });
 
-test("a failed run emits an error event", async () => {
+test("a failed run emits a generic error and reports the real one", async () => {
   const agent: ChatStreamAgent = {
     async stream() {
       return (async function* () {
@@ -313,13 +313,38 @@ test("a failed run emits an error event", async () => {
       })();
     },
   };
+  let reported: unknown;
+  const events: ChatEvent[] = [];
+  for await (const event of iterateChatEvents(
+    agent,
+    {
+      conversationId: "44444444-4444-4444-8444-444444444444",
+      message: "hello",
+    },
+    {
+      requestId: "req-9",
+      onError(error) {
+        reported = error;
+      },
+    },
+  )) {
+    events.push(event);
+  }
 
-  const events = await collect(agent, "hello");
-
+  expect(reported).toBeInstanceOf(Error);
+  expect(reported).toMatchObject({ message: "model down" });
   expect(events).toEqual([
     { event: "token", data: { text: "Partial", messageId: "p" } },
-    { event: "error", data: { code: "agent_error", message: "model down" } },
+    {
+      event: "error",
+      data: {
+        code: "agent_error",
+        message: "The agent failed before it could answer.",
+        requestId: "req-9",
+      },
+    },
   ]);
+  expect(JSON.stringify(events)).not.toContain("model down");
 });
 
 test("pre-tool text is discarded when that message becomes a tool call", async () => {
@@ -508,6 +533,7 @@ test("an empty citation never matches the answer", async () => {
 test("an aborted run emits no error event", async () => {
   const abort = new AbortController();
   let usage: { inputTokens: number; outputTokens: number } | undefined;
+  let reported = false;
   const agent: ChatStreamAgent = {
     async stream() {
       return (async function* () {
@@ -533,6 +559,9 @@ test("an aborted run emits no error event", async () => {
       onUsage(value) {
         usage = value;
       },
+      onError() {
+        reported = true;
+      },
     },
   )) {
     events.push(event);
@@ -541,5 +570,6 @@ test("an aborted run emits no error event", async () => {
   expect(events).toEqual([
     { event: "token", data: { text: "Partial", messageId: "p" } },
   ]);
+  expect(reported).toBe(false);
   expect(usage).toEqual({ inputTokens: 0, outputTokens: 0 });
 });

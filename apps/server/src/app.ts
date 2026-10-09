@@ -13,8 +13,11 @@ import {
 import { createHealthHandler } from "./health.js";
 import {
   beginObservation,
+  readObservation,
+  recordOutcome,
   resolveRequestId,
   type RequestLogEntry,
+  type RequestOutcome,
 } from "./observe.js";
 
 export interface CreateAppOptions {
@@ -56,6 +59,7 @@ export function finalizeServer(app: Express, options: CreateAppOptions): void {
 }
 
 export function notFound(_req: Request, res: Response): void {
+  recordServerError(res, "not_found");
   res.status(404).json({
     error: { code: "not_found", message: "Not found" },
   });
@@ -86,6 +90,7 @@ function requestLogger(log: (line: string) => void) {
       }
       logged = true;
       const latencyMs = Math.max(0, Math.round(performance.now() - started));
+      const outcome = observation.outcome ?? defaultOutcome(res);
       const entry: RequestLogEntry = {
         level: "info",
         msg: "request",
@@ -94,6 +99,13 @@ function requestLogger(log: (line: string) => void) {
         path,
         status: res.statusCode,
         latencyMs,
+        outcome,
+        ...(observation.errorCode === undefined
+          ? {}
+          : { errorCode: observation.errorCode }),
+        ...(observation.error === undefined
+          ? {}
+          : { error: observation.error }),
         toolCalls: observation.toolCalls.map((call) => ({ ...call })),
         usage: { ...observation.usage },
       };
@@ -110,6 +122,10 @@ function requestLogger(log: (line: string) => void) {
             path,
             status: res.statusCode,
             latencyMs,
+            outcome,
+            ...(observation.errorCode === undefined
+              ? {}
+              : { errorCode: observation.errorCode }),
             error: detail,
             toolCalls: observation.toolCalls.map((call) => ({
               tool: call.tool,
@@ -121,9 +137,38 @@ function requestLogger(log: (line: string) => void) {
     };
 
     res.once("finish", write);
-    res.once("close", write);
+    res.once("close", () => {
+      if (res.writableFinished) {
+        write();
+        return;
+      }
+      // The route's close listener is registered later and marks an aborted
+      // chat in this same turn. Wait until that listener has run.
+      setImmediate(write);
+    });
     next();
   };
+}
+
+function defaultOutcome(res: Response): RequestOutcome {
+  if (!res.writableFinished) {
+    return "aborted";
+  }
+  if (res.statusCode >= 400) {
+    return "error";
+  }
+  return "ok";
+}
+
+function recordServerError(res: Response, code: string): void {
+  try {
+    if (readObservation(res).outcome !== undefined) {
+      return;
+    }
+  } catch {
+    return;
+  }
+  recordOutcome(res, "error", code);
 }
 
 function errorHandler(log: (line: string) => void) {
@@ -154,6 +199,7 @@ function errorHandler(log: (line: string) => void) {
       return;
     }
     if (status === 413) {
+      recordServerError(res, "payload_too_large");
       res.status(413).json({
         error: {
           code: "payload_too_large",
@@ -163,6 +209,7 @@ function errorHandler(log: (line: string) => void) {
       return;
     }
     if (status !== undefined) {
+      recordServerError(res, "invalid_request");
       res.status(status).json({
         error: {
           code: "invalid_request",
@@ -171,6 +218,7 @@ function errorHandler(log: (line: string) => void) {
       });
       return;
     }
+    recordServerError(res, "internal");
     res.status(500).json({
       error: { code: "internal", message: "Internal server error" },
     });
