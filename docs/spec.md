@@ -449,10 +449,13 @@ Response: `text/event-stream`. Events, in order:
 | --- | --- | --- |
 | `tool_start` | `{ tool, input }` | Show "searching notes..." in the UI |
 | `tool_end` | `{ tool, hitCount }` | Close the indicator |
-| `token` | `{ text }` | Append to the answer as it streams |
-| `sources` | `{ citations: SearchHit[] }` | Render source chips under the answer |
+| `token` | `{ text, messageId }` | Append to the answer, grouped by `messageId` |
+| `discard` | `{ messageId }` | Remove all text already shown for that message: it turned into a tool call |
+| `sources` | `{ citations: SearchHit[] }` | Source chips: only hits whose `citation` appears in the answer, deduped by `chunkId`; empty for a refusal |
 | `done` | `{ usage: { inputTokens, outputTokens }, latencyMs }` | End of turn; logged per NFR-OBS-01 |
-| `error` | `{ code, message }` | Recoverable error shown to the user |
+| `error` | `{ code, message, requestId? }` | Generic message for the user; the real error is logged server-side under `requestId` |
+
+**Client rule (Oct 8):** keep text per `messageId` and drop it on `discard`. The answer is the remaining text in arrival order. CORS allows only `CORS_ORIGIN` (skipped while it is the placeholder); `OPTIONS` preflight is answered before auth.
 
 Implementation: iterate `agent.stream({ messages: [{ role: "user", content }] }, { configurable: { thread_id: conversationId }, streamMode: ["messages", "updates"] })` and map chunks to these events. Other endpoints: `GET /health` (no auth) and `DELETE /chat/:conversationId` to reset a conversation.
 
@@ -522,7 +525,7 @@ Sixteen tasks across three phases; each is sized for one working session and is 
   - `--dry-run` writes nothing; a changed `EMBEDDING_DIMENSIONS` refuses to run without `--full`.
 - [x] **T1.6 Retrieval service + `query` command** \[FR-RET-01, 02, 03, NFR-PERF-01\].
   - `pnpm cli query "..."` prints citations and scores; tag filter narrows results; p95 under 1.5 s over 20 runs.
-- [x] **T1.7 Golden set + `eval` command** \[FR-EVAL-01, NFR-QA-01\].
+- [ ] **T1.7 Golden set + `eval` command** \[FR-EVAL-01, NFR-QA-01\].
   - 15 questions per section 9.1; report shows hit@5 ≥ 0.8 (tune chunking and threshold until it does).
 
 ### Phase 2: Agent and chat API
@@ -534,11 +537,10 @@ Sixteen tasks across three phases; each is sized for one working session and is 
   - Manual check: 5 golden questions answered with citations; 2 negative questions answered starting with exactly "The notes don't cover this.".
 - [x] **T2.3 Server: auth, health, logging** \[NFR-SEC-01, NFR-OBS-01\].
   - Missing or wrong `x-api-key` returns 401; logs show request ID, latency, tool calls, token usage.
-  - `GET /health` does not require the API key. It returns 200 when the search index exists and 503 when it does not.
 - [x] **T2.4 `POST /chat` with SSE** \[FR-API-01, FR-API-02\].
   - Events match section 8.5; a second message with the same `conversationId` sees the first; `DELETE` resets it.
   - A minimal test client (`curl -N` script or small HTML page) shows tokens streaming.
-- [x] **T2.5 Deploy to Container Apps.** Dockerfile (multi-stage, Node 22 slim), secrets as env vars, min replicas 0.
+- [ ] **T2.5 Deploy to Container Apps.** Dockerfile (multi-stage, Node 22 slim), secrets as env vars, min replicas 0.
   - `/health` returns 200 from the public URL; `/chat` works from the test client.
 
 ## 11. Risks, open decisions and future phases
