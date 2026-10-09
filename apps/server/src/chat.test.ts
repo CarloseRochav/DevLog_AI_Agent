@@ -407,7 +407,7 @@ test("a second message sees the first until DELETE resets it", async () => {
     const secondEvents = parseSse(await second.text());
     expect(secondEvents).toContainEqual({
       event: "token",
-      data: { text: "answer-beta" },
+      data: { text: "answer-beta", messageId: expect.any(String) },
     });
     const secondCall = model.calls[1]?.messages
       .map((message) => message.text)
@@ -428,7 +428,7 @@ test("a second message sees the first until DELETE resets it", async () => {
     });
     expect(parseSse(await third.text())).toContainEqual({
       event: "token",
-      data: { text: "answer-gamma" },
+      data: { text: "answer-gamma", messageId: expect.any(String) },
     });
     const thirdCall = model.calls[2]?.messages
       .map((message) => message.text)
@@ -537,7 +537,7 @@ test("a failed turn streams an error event", async () => {
     });
     expect(response.status).toBe(200);
     expect(parseSse(await response.text())).toEqual([
-      { event: "token", data: { text: "Partial" } },
+      { event: "token", data: { text: "Partial", messageId: "p" } },
       { event: "error", data: { code: "agent_error", message: "model down" } },
     ]);
   });

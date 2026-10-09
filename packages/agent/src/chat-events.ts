@@ -21,7 +21,8 @@ export interface ChatUsage {
 export type ChatEvent =
   | { event: "tool_start"; data: { tool: string; input: unknown } }
   | { event: "tool_end"; data: { tool: string; hitCount: number } }
-  | { event: "token"; data: { text: string } }
+  | { event: "token"; data: { text: string; messageId: string } }
+  | { event: "discard"; data: { messageId: string } }
   | { event: "sources"; data: { citations: SearchHit[] } }
   | {
       event: "done";
@@ -101,7 +102,13 @@ export async function* iterateChatEvents(
   const ended = new Set<string>();
   const usageByMessage = new Map<string, ChatUsage>();
   const citations: SearchHit[] = [];
+  const streamed = new Set<string>();
+  const discarded = new Set<string>();
   let anonymous = 0;
+  const nextAnonymous = (): string => {
+    anonymous += 1;
+    return `anon-${anonymous}`;
+  };
 
   const usage = (): ChatUsage => {
     let inputTokens = 0;
@@ -130,10 +137,13 @@ export async function* iterateChatEvents(
         continue;
       }
       if (AIMessage.isInstance(message) || AIMessageChunk.isInstance(message)) {
-        rememberUsage(usageByMessage, message, () => {
-          anonymous += 1;
-          return `anon-${anonymous}`;
-        });
+        const messageId = messageKey(message, nextAnonymous);
+        rememberUsage(usageByMessage, message, messageId);
+        const toolTurn = isToolTurn(message);
+        if (toolTurn && streamed.has(messageId) && !discarded.has(messageId)) {
+          discarded.add(messageId);
+          yield { event: "discard", data: { messageId } };
+        }
         const calls = message.tool_calls ?? [];
         for (const call of calls) {
           rememberTool(pending, call);
@@ -141,8 +151,9 @@ export async function* iterateChatEvents(
         for (const event of startReadyTools(pending, options.onTool)) {
           yield event;
         }
-        if (calls.length === 0 && message.text !== "") {
-          yield { event: "token", data: { text: message.text } };
+        if (!toolTurn && !discarded.has(messageId) && message.text !== "") {
+          streamed.add(messageId);
+          yield { event: "token", data: { text: message.text, messageId } };
         }
         continue;
       }
@@ -212,10 +223,34 @@ function messageFromChunk(chunk: unknown): BaseMessage | undefined {
   return undefined;
 }
 
+function messageKey(
+  message: { id?: string },
+  nextAnonymous: () => string,
+): string {
+  if (typeof message.id === "string" && message.id !== "") {
+    return message.id;
+  }
+  return nextAnonymous();
+}
+
+function isToolTurn(message: AIMessage | AIMessageChunk): boolean {
+  if ((message.tool_calls ?? []).length > 0) {
+    return true;
+  }
+  if ((message.invalid_tool_calls ?? []).length > 0) {
+    return true;
+  }
+  if (!("tool_call_chunks" in message)) {
+    return false;
+  }
+  const chunks = message.tool_call_chunks;
+  return Array.isArray(chunks) && chunks.length > 0;
+}
+
 function rememberUsage(
   usageByMessage: Map<string, ChatUsage>,
-  message: { id?: string; usage_metadata?: UsageMetadata },
-  nextAnonymous: () => string,
+  message: { usage_metadata?: UsageMetadata },
+  messageId: string,
 ): void {
   const metadata = message.usage_metadata;
   if (metadata === undefined) {
@@ -223,7 +258,7 @@ function rememberUsage(
   }
   const inputTokens = finite(metadata.input_tokens);
   const outputTokens = finite(metadata.output_tokens);
-  usageByMessage.set(message.id ?? nextAnonymous(), {
+  usageByMessage.set(messageId, {
     inputTokens,
     outputTokens,
   });

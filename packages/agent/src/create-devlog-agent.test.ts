@@ -132,6 +132,9 @@ test("createDevlogAgent runs search_architecture_docs and read_note", async () =
     .map(textOf)
     .join("\n");
 
+  expect(SYSTEM_PROMPT).toContain(
+    "Do not write any text before calling a tool.",
+  );
   expect(SYSTEM_PROMPT).toContain("The notes don't cover this.");
   expect(SYSTEM_PROMPT).toContain(
     "If two searches return nothing on-topic, stop and refuse.",

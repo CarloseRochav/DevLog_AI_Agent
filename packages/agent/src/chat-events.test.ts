@@ -213,8 +213,8 @@ test("token chunks stay separate and tool results report hit counts", async () =
   const events = await collect(agent, "hello");
 
   expect(events.filter((event) => event.event === "token")).toEqual([
-    { event: "token", data: { text: "Hel" } },
-    { event: "token", data: { text: "lo" } },
+    { event: "token", data: { text: "Hel", messageId: "answer" } },
+    { event: "token", data: { text: "lo", messageId: "answer" } },
   ]);
   expect(events).toContainEqual({
     event: "tool_end",
@@ -278,9 +278,120 @@ test("a failed run emits an error event", async () => {
   const events = await collect(agent, "hello");
 
   expect(events).toEqual([
-    { event: "token", data: { text: "Partial" } },
+    { event: "token", data: { text: "Partial", messageId: "p" } },
     { event: "error", data: { code: "agent_error", message: "model down" } },
   ]);
+});
+
+test("pre-tool text is discarded when that message becomes a tool call", async () => {
+  const agent = scripted([
+    [
+      "messages",
+      [
+        new AIMessageChunk({
+          content: "Let me search...",
+          id: "call-msg",
+        }),
+        {},
+      ],
+    ],
+    [
+      "messages",
+      [
+        new AIMessageChunk({
+          content: "still talking",
+          id: "call-msg",
+          tool_call_chunks: [
+            {
+              id: "call-1",
+              name: "search_architecture_docs",
+              args: '{"query":"queue"}',
+              index: 0,
+            },
+          ],
+        }),
+        {},
+      ],
+    ],
+    [
+      "messages",
+      [
+        new AIMessageChunk({
+          content: "The worker calls sp_ProcessBatch.",
+          id: "answer",
+        }),
+        {},
+      ],
+    ],
+  ]);
+
+  const events = await collect(agent, "hello");
+  const discarded = new Set(
+    events.flatMap((event) =>
+      event.event === "discard" ? [event.data.messageId] : [],
+    ),
+  );
+  const joined = events
+    .flatMap((event) =>
+      event.event === "token" && !discarded.has(event.data.messageId)
+        ? [event.data.text]
+        : [],
+    )
+    .join("");
+
+  expect(events).toContainEqual({
+    event: "token",
+    data: { text: "Let me search...", messageId: "call-msg" },
+  });
+  expect(events).toContainEqual({
+    event: "discard",
+    data: { messageId: "call-msg" },
+  });
+  expect(events.filter((event) => event.event === "discard")).toHaveLength(1);
+  expect(events).not.toContainEqual({
+    event: "token",
+    data: { text: "still talking", messageId: "call-msg" },
+  });
+  expect(joined).not.toContain("Let me search");
+  expect(joined).toBe("The worker calls sp_ProcessBatch.");
+  const discardAt = events.findIndex((event) => event.event === "discard");
+  const toolAt = events.findIndex((event) => event.event === "tool_start");
+  expect(discardAt).toBeGreaterThanOrEqual(0);
+  expect(toolAt).toBeGreaterThan(discardAt);
+});
+
+test("a tool call that arrives with its text emits no token and no discard", async () => {
+  const agent = scripted([
+    [
+      "messages",
+      [
+        new AIMessageChunk({
+          content: "Let me search...",
+          id: "call-msg",
+          tool_calls: [
+            {
+              id: "call-1",
+              name: "search_architecture_docs",
+              args: { query: "queue" },
+            },
+          ],
+        }),
+        {},
+      ],
+    ],
+  ]);
+
+  const events = await collect(agent, "hello");
+
+  expect(events.filter((event) => event.event === "token")).toEqual([]);
+  expect(events.filter((event) => event.event === "discard")).toEqual([]);
+  expect(events).toContainEqual({
+    event: "tool_start",
+    data: {
+      tool: "search_architecture_docs",
+      input: { query: "queue" },
+    },
+  });
 });
 
 test("an aborted run emits no error event", async () => {
@@ -316,6 +427,8 @@ test("an aborted run emits no error event", async () => {
     events.push(event);
   }
 
-  expect(events).toEqual([{ event: "token", data: { text: "Partial" } }]);
+  expect(events).toEqual([
+    { event: "token", data: { text: "Partial", messageId: "p" } },
+  ]);
   expect(usage).toEqual({ inputTokens: 0, outputTokens: 0 });
 });
