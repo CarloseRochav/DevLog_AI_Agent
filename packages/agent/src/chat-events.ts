@@ -104,6 +104,8 @@ export async function* iterateChatEvents(
   const citations: SearchHit[] = [];
   const streamed = new Set<string>();
   const discarded = new Set<string>();
+  const textByMessage = new Map<string, string>();
+  const textOrder: string[] = [];
   let anonymous = 0;
   const nextAnonymous = (): string => {
     anonymous += 1;
@@ -142,6 +144,7 @@ export async function* iterateChatEvents(
         const toolTurn = isToolTurn(message);
         if (toolTurn && streamed.has(messageId) && !discarded.has(messageId)) {
           discarded.add(messageId);
+          textByMessage.delete(messageId);
           yield { event: "discard", data: { messageId } };
         }
         const calls = message.tool_calls ?? [];
@@ -153,6 +156,7 @@ export async function* iterateChatEvents(
         }
         if (!toolTurn && !discarded.has(messageId) && message.text !== "") {
           streamed.add(messageId);
+          appendAnswer(textByMessage, textOrder, messageId, message.text);
           yield { event: "token", data: { text: message.text, messageId } };
         }
         continue;
@@ -183,7 +187,12 @@ export async function* iterateChatEvents(
       };
     }
 
-    yield { event: "sources", data: { citations } };
+    yield {
+      event: "sources",
+      data: {
+        citations: citedHits(citations, answerText(textOrder, textByMessage)),
+      },
+    };
     yield {
       event: "done",
       data: {
@@ -356,6 +365,48 @@ function toolResult(
     return { hitCount: parsed.length, citations: [] };
   }
   return { hitCount: 0, citations: [] };
+}
+
+const REFUSAL = "The notes don't cover this.";
+
+function appendAnswer(
+  textByMessage: Map<string, string>,
+  textOrder: string[],
+  messageId: string,
+  text: string,
+): void {
+  if (!textByMessage.has(messageId)) {
+    textOrder.push(messageId);
+  }
+  textByMessage.set(messageId, (textByMessage.get(messageId) ?? "") + text);
+}
+
+function answerText(
+  textOrder: string[],
+  textByMessage: Map<string, string>,
+): string {
+  return textOrder
+    .filter((id) => textByMessage.has(id))
+    .map((id) => textByMessage.get(id) ?? "")
+    .join("");
+}
+
+function citedHits(hits: SearchHit[], answer: string): SearchHit[] {
+  if (answer.startsWith(REFUSAL)) {
+    return [];
+  }
+  const seen = new Set<string>();
+  const unique: SearchHit[] = [];
+  for (const hit of hits) {
+    if (seen.has(hit.chunkId)) {
+      continue;
+    }
+    seen.add(hit.chunkId);
+    unique.push(hit);
+  }
+  return unique.filter(
+    (hit) => hit.citation !== "" && answer.includes(hit.citation),
+  );
 }
 
 function finite(value: number): number {

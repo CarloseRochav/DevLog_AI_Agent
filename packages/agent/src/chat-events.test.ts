@@ -3,6 +3,7 @@ import {
   InMemoryNoteStore,
   InMemorySearchIndex,
   type IndexedChunk,
+  type SearchHit,
 } from "@devlog/core";
 import {
   AIMessage,
@@ -90,6 +91,44 @@ function scripted(chunks: unknown[]): ChatStreamAgent {
       })();
     },
   };
+}
+
+function searchHit(chunkId: string, citation: string, score = 0.5): SearchHit {
+  return {
+    chunkId,
+    notePath: `${chunkId}.md`,
+    noteTitle: chunkId,
+    headingPath: ["Section"],
+    content: "body",
+    score,
+    citation,
+  };
+}
+
+function searchMessage(id: string, hits: SearchHit[]): unknown {
+  return [
+    "messages",
+    [
+      new ToolMessage({
+        content: JSON.stringify(hits),
+        name: "search_architecture_docs",
+        tool_call_id: id,
+      }),
+      {},
+    ],
+  ];
+}
+
+function answerChunk(text: string, id: string): unknown {
+  return ["messages", [new AIMessageChunk({ content: text, id }), {}]];
+}
+
+function sourcesOf(events: ChatEvent[]): SearchHit[] {
+  const sources = events.find((event) => event.event === "sources");
+  if (sources === undefined || sources.event !== "sources") {
+    throw new Error("sources event is missing");
+  }
+  return sources.data.citations;
 }
 
 test("a search turn emits tools, tokens, sources, and done", async () => {
@@ -392,6 +431,78 @@ test("a tool call that arrives with its text emits no token and no discard", asy
       input: { query: "queue" },
     },
   });
+});
+
+test("sources keep only the cited hit", async () => {
+  const alpha = searchHit("chunk-a", "Notes > Alpha", 0.9);
+  const beta = searchHit("chunk-b", "Notes > Beta", 0.4);
+  const agent = scripted([
+    searchMessage("call-1", [alpha, beta]),
+    answerChunk("Beta is documented. [Notes > Beta]", "answer"),
+  ]);
+
+  expect(sourcesOf(await collect(agent, "hello"))).toEqual([beta]);
+});
+
+test("a repeated cited chunk is kept once, as the first hit", async () => {
+  const first = searchHit("chunk-a", "Notes > Alpha", 0.9);
+  const second = searchHit("chunk-a", "Notes > Alpha", 0.1);
+  const agent = scripted([
+    searchMessage("call-1", [first]),
+    searchMessage("call-2", [second]),
+    answerChunk("See [Notes > Alpha].", "answer"),
+  ]);
+
+  expect(sourcesOf(await collect(agent, "hello"))).toEqual([first]);
+});
+
+test("a refusal sends no sources", async () => {
+  const alpha = searchHit("chunk-a", "Notes > Alpha");
+  const agent = scripted([
+    searchMessage("call-1", [alpha]),
+    answerChunk("The notes don't cover this. See [Notes > Alpha].", "answer"),
+  ]);
+
+  expect(sourcesOf(await collect(agent, "hello"))).toEqual([]);
+});
+
+test("a citation that only appears in discarded preamble is dropped", async () => {
+  const alpha = searchHit("chunk-a", "Notes > Alpha");
+  const agent = scripted([
+    answerChunk("Looking at [Notes > Alpha]", "call-msg"),
+    [
+      "messages",
+      [
+        new AIMessageChunk({
+          content: "",
+          id: "call-msg",
+          tool_call_chunks: [
+            {
+              id: "call-1",
+              name: "search_architecture_docs",
+              args: '{"query":"alpha"}',
+              index: 0,
+            },
+          ],
+        }),
+        {},
+      ],
+    ],
+    searchMessage("call-1", [alpha]),
+    answerChunk("Nothing useful here.", "answer"),
+  ]);
+
+  expect(sourcesOf(await collect(agent, "hello"))).toEqual([]);
+});
+
+test("an empty citation never matches the answer", async () => {
+  const blank = searchHit("chunk-a", "");
+  const agent = scripted([
+    searchMessage("call-1", [blank]),
+    answerChunk("The notes mention the queue worker.", "answer"),
+  ]);
+
+  expect(sourcesOf(await collect(agent, "hello"))).toEqual([]);
 });
 
 test("an aborted run emits no error event", async () => {
